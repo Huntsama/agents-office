@@ -283,6 +283,19 @@ await step('browser: tools.browser puts --chrome and the Chrome server in the ag
   const b = m.browserState();
   return `--chrome · mcp__claude-in-chrome allowed · deny works · --no-chrome when off · tile baked · this machine: ${b.installed ? 'extension paired' + (b.device ? ' (' + b.device + ')' : '') : 'extension NOT paired'}`;
 });
+await step('calendar: a routine can start on a date, and projects forward day by day', async () => { // V3.2.1
+  const w = await import('./src/when.js');
+  const now = new Date('2026-09-16T10:00:00').getTime();
+  const later = w.nextRun({ kind: 'weekdays', at: '08:00', start: '2026-09-28' }, now); if (new Date(later).toDateString() !== 'Mon Sep 28 2026') throw new Error('start ignored: ' + new Date(later));
+  const earlier = w.nextRun({ kind: 'weekdays', at: '08:00', start: '2026-09-01' }, now); if (new Date(earlier).toDateString() !== 'Thu Sep 17 2026') throw new Error('a past start changed the next run: ' + new Date(earlier));
+  const occ = w.occurrences({ kind: 'weekly', days: [1], at: '09:00', start: '2026-09-28' }, now, now + 30 * 864e5).map(t => new Date(t).getDate()); if (occ.join() !== '28,5,12') throw new Error('occurrences: ' + occ);
+  if (!/from 5 Jan/.test(w.describe({ kind: 'daily', at: '08:00', start: '2099-01-05' })) || /from/.test(w.describe({ kind: 'daily', at: '08:00', start: '2020-01-05' }))) throw new Error('describe start');
+  if (w.valid({ kind: 'daily', at: '08:00', start: 'next week' })) throw new Error('a bad start date passed');
+  const pk = w.fromPicker('mon', '09:30', '2026-10-05'); if (pk.start !== '2026-10-05' || pk.days[0] !== 1) throw new Error('picker start: ' + JSON.stringify(pk));
+  const { validate } = await import('./routines.mjs'); const { loadRoster } = await import('./roster.mjs');
+  const v = validate({ id: 'oct', dept: 'emails', agent: 'elead', title: 'x', text: 'x', when: { kind: 'weekdays', at: '08:00', start: '2026-10-05' } }, loadRoster().agents); if (v.problems.length || v.routine.when.start !== '2026-10-05') throw new Error('routine start lost: ' + v.problems.join(' | '));
+  return 'start date honoured · past start ignored · 3 Mondays projected · described "from 5 Jan" · picker + routines carry start';
+});
 await step('config: browser and teams default on, max 4', async () => {
   const c = loadConfig(); if (c.tools.browser !== true || c.teams.enabled !== true || c.teams.max !== 4) throw new Error(JSON.stringify({ tools: c.tools, teams: c.teams }));
 });
@@ -370,6 +383,39 @@ else {
       await page.fill('.tp-in', ''); await page.evaluate(() => document.querySelector('.tp-in').dispatchEvent(new Event('input', { bubbles: true }))); await page.evaluate(() => document.querySelector('.tp-in').blur()); await page.click('.tp-chip[data-f="all"]'); // hand the keys back, feed back to All
       const rest = await page.evaluate(() => document.querySelector('.tp-in').offsetHeight); if (rest > 34) throw new Error('box did not shrink back: ' + rest + 'px');
       return 'hint says the schedule · SCHEDULED row + next-up strip + board column · RUN NOW fires · marketing refused · box grows + big editor mirrors';
+    });
+    await step('smoke: the CALENDAR button and P open the calendar — routines on their days, a task scheduled for a date, a routine from a date (demo)', async () => { // V3.2.1
+      await page.click('#topCal'); await page.waitForTimeout(500); // the top-bar button opens it…
+      if (!await page.$eval('#calOv', e => e.classList.contains('on'))) throw new Error('the CALENDAR button did not open the calendar');
+      await page.keyboard.press('Escape'); await page.waitForTimeout(400);
+      await page.keyboard.press('p'); await page.waitForTimeout(600); // …and so does P
+      if (!await page.$eval('#calOv', e => e.classList.contains('on'))) throw new Error('P did not open the calendar');
+      const cells = await page.$$eval('.cv-day', e => e.length); if (cells !== 35 && cells !== 42) throw new Error('month cells: ' + cells);
+      if (!await page.$('.cv-day.today')) throw new Error('no today cell');
+      const rt = await page.$$eval('.cv-ev.routine', e => e.length); if (rt < 3) throw new Error('routine occurrences on the grid: ' + rt);
+      const rail = await page.$eval('#cvRtN', e => +e.textContent); if (rail < 1) throw new Error('rail empty');
+      // a task for a day next week (the second day after today on the grid)
+      const days = await page.$$eval('.cv-day', els => els.map(e => e.dataset.day)); const ti = days.indexOf(await page.$eval('.cv-day.today', e => e.dataset.day));
+      const target = days[Math.min(days.length - 1, ti + 2)];
+      await page.hover(`.cv-day[data-day="${target}"]`); await page.click(`.cv-day[data-day="${target}"] .cv-add`); await page.waitForTimeout(300);
+      await page.selectOption('.cv-dept', 'sales'); await page.fill('.cv-text', 'Call the three warm leads from the expo'); await page.click('.cv-go'); await page.waitForTimeout(500);
+      const sched = await page.$$eval('.cv-ev.sched', e => e.map(x => x.closest('.cv-day').dataset.day)); if (sched.length !== 1 || sched[0] !== target) throw new Error('scheduled card: ' + JSON.stringify(sched));
+      const panel = await page.evaluate(() => window.CC.tasks.tasks.filter(t => t.state === 'scheduled').length); if (panel !== 1) throw new Error('panel has ' + panel + ' scheduled');
+      // a routine from that date: REPEAT on, emails (routines are Emails/Accounting/Sales)
+      await page.hover(`.cv-day[data-day="${target}"]`); await page.click(`.cv-day[data-day="${target}"] .cv-add`); await page.waitForTimeout(300);
+      await page.selectOption('.cv-dept', 'emails'); await page.fill('.cv-text', 'Send the weekly client update'); await page.click('.cv-rep'); await page.waitForTimeout(200);
+      const hint = await page.$eval('.cv-hint', e => e.textContent); if (!/Routine ·/.test(hint) || !/first run/.test(hint)) throw new Error('routine hint: ' + hint);
+      await page.click('.cv-go'); await page.waitForTimeout(500);
+      const r = await page.evaluate(() => window.CC.tasks.routines.find(x => /weekly client update/i.test(x.title))); if (!r || r.when.start !== target) throw new Error('routine start: ' + JSON.stringify(r && r.when));
+      const before = await page.$$eval('.cv-ev.routine', (els, t) => els.filter(x => x.title.startsWith('Send the weekly client update') && x.closest('.cv-day').dataset.day < t).length, target); if (before) throw new Error('the routine shows before its start date');
+      // marketing is refused for routines, with the sentence
+      await page.hover(`.cv-day[data-day="${target}"]`); await page.click(`.cv-day[data-day="${target}"] .cv-add`); await page.waitForTimeout(200);
+      await page.selectOption('.cv-dept', 'marketing'); await page.click('.cv-rep'); await page.waitForTimeout(150);
+      const refused = await page.$eval('.cv-hint', e => e.textContent); const dis = await page.$eval('.cv-go', e => e.disabled); if (!/later release/.test(refused) || !dis) throw new Error('marketing routine not refused: ' + refused);
+      await page.keyboard.press('Escape'); await page.waitForTimeout(150); if (!await page.$eval('#cvPop', e => e.hidden)) throw new Error('Esc did not close the popover');
+      await page.click('.cv-seg button[data-v="week"]'); await page.waitForTimeout(300); const wk = await page.$$eval('.cv-day', e => e.length); if (wk !== 7) throw new Error('week cells: ' + wk);
+      await page.keyboard.press('Escape'); await page.waitForTimeout(300); if (await page.$eval('#calOv', e => e.classList.contains('on'))) throw new Error('Esc did not close the calendar');
+      return `${cells} cells · ${rt} routine runs on the grid · rail ${rail} · task scheduled for ${target} · routine starts ${target} (none before) · marketing refused · week view 7`;
     });
     await step('smoke: department focus opens the chat rail', async () => {
       await page.keyboard.press('1'); await page.waitForTimeout(1800);
@@ -460,6 +506,13 @@ else {
       const c = m.servers.find(s => s.id === 'claude-in-chrome'); if (!c || c.key !== 'chrome' || !Array.isArray(c.depts) || c.depts.length !== 6) throw new Error('chrome not in /api/mcp: ' + JSON.stringify(c));
       return `teams on (max ${up.teams.max}) · Chrome ${c.status}${up.browser.device ? ' · ' + up.browser.device : ''} · wired to every pod`;
     });
+    await step('server: a task scheduled for a time that has passed is refused', async () => { // V3.2.1
+      const r = await fetch(base + '/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dept: 'sales', text: 'call the leads', at: Date.now() - 3600000 }) });
+      const j = await r.json(); if (r.status !== 400 || !/passed/.test(j.error)) throw new Error(r.status + ' ' + JSON.stringify(j));
+      const b = await fetch(base + '/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dept: 'sales', text: 'call the leads', at: 'tomorrowish' }) });
+      if (b.status !== 400) throw new Error('bad time accepted');
+      return j.error;
+    });
     await step('server: rejects an empty task', async () => { const r = await fetch(base + '/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"dept":"sales","text":""}' }); if (r.status !== 400) throw new Error('status ' + r.status); });
     if (LIVE) {
       await step('live: Claude routes a task', async () => {
@@ -491,6 +544,22 @@ else {
         if (d.modelUsed !== 'opus' || d.modelFrom !== 'task' || !/opus/.test(String(d.modelId))) throw new Error(`ran on ${d.modelId} (${d.modelUsed} from ${d.modelFrom})`);
         const u = await (await fetch(base + '/api/usage')).json(); if (!u.ok) throw new Error('usage after a run');
         return `${d.agent} · ${d.modelId} · from the task · gauge ${u.source}`;
+      });
+      await step('live: a task scheduled 75 s ahead fires on its minute and lands; a routine from a date waits for it', async () => { // V3.2.1
+        const at = Date.now() + 75000;
+        const r = await fetch(base + '/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dept: 'emails', text: 'list what is in the inbox that needs me today', at }) });
+        const t = await r.json(); if (!r.ok) throw new Error(t.error); if (t.state !== 'scheduled' || t.dueAt !== at) throw new Error('not scheduled: ' + JSON.stringify({ state: t.state, dueAt: t.dueAt }));
+        const start = new Date(Date.now() + 10 * 864e5).toISOString().slice(0, 10);
+        const rr = await fetch(base + '/api/routines', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dept: 'emails', text: 'triage the inbox', when: { kind: 'weekdays', at: '08:00', start } }) });
+        const j = await rr.json(); if (!rr.ok) throw new Error(j.error);
+        try {
+          if (!j.routine.nextAt || new Date(j.routine.nextAt).toISOString().slice(0, 10) < start) throw new Error('routine fires before its start: ' + new Date(j.routine.nextAt));
+          let task = null;
+          for (let i = 0; i < 100 && !(task && task.state !== 'scheduled' && task.state !== 'next' && task.state !== 'doing'); i++) { await new Promise(r => setTimeout(r, 3000)); task = (await (await fetch(base + '/api/tasks')).json()).find(x => x.id === t.id); }
+          if (!task || task.state === 'scheduled') throw new Error('the scheduled task never fired'); if (task.state === 'next' || task.state === 'doing') throw new Error('fired but did not finish in time');
+          if (task.error) throw new Error('task failed: ' + task.result.slice(0, 120));
+          return `${task.agent} · ${task.title} · ${task.state}${task.state === 'waiting' ? ' for the OK' : ''} · routine "${j.routine.desc}" next ${new Date(j.routine.nextAt).toDateString()}`;
+        } finally { await fetch(`${base}/api/routines/${j.routine.id}`, { method: 'DELETE' }); }
       });
       await step('live: a team task — the lead plans, the desks work at once, the lead writes the final', async () => {
         const r = await fetch(base + '/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dept: 'marketing', text: 'as a team, give me three angles for a reel about inbox overload: for each one a hook line and a two-sentence caption', team: true }) });
@@ -537,9 +606,10 @@ else {
           await page.click(`.tp-row[data-id="${mine}"]`); await page.waitForTimeout(2500);
           const card = await page.evaluate(n => [...document.querySelectorAll('.m-file .f-name')].some(e => e.textContent === n + '.md'), done.note); if (!card) throw new Error('deliverable card not in the chat');
           const after = await page.evaluate(() => window.CC.brain.nodes.length);
-          if (after <= before) throw new Error(`brain graph did not grow (${before} → ${after})`);
+          const inGraph = await page.evaluate(n => window.CC.brain.nodes.some(x => x.id === n), done.note); // a second run on the same day rewrites the same note, so the count may not grow
+          if (after < before || !inGraph) throw new Error(`the new note is not in the brain graph (${before} → ${after}, ${done.note})`);
           if (errs.length) throw new Error(errs[0]);
-          return `${hint.trim().slice(0, 50)} · ${done.note}.md in the chat · brain ${before} → ${after} notes`;
+          return `${hint.trim().slice(0, 50)} · ${done.note}.md in the chat and in the graph · brain ${before} → ${after} notes`;
         } finally { await browser.close(); }
       });
     } else ok('live: skipped', 'set CHECK_LIVE=1 to route one task and one chat through Claude');

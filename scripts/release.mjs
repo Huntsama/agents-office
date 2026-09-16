@@ -20,7 +20,7 @@ const TAG = 'v' + pkg.version;
 const push = process.argv.includes('--push');
 const OUT = path.join(ROOT, 'dist', 'release');
 
-const FILES = ['src', 'assets/mcp/tiles', 'assets/mcp/bake.py', 'assets/mcp/rebake.py', 'brain', 'scripts/release.mjs',
+const FILES = ['src', 'assets/mcp/tiles', 'assets/mcp/bake.py', 'assets/mcp/rebake.py', 'assets/kode-mono-600.woff2', 'brain', 'scripts/release.mjs',
   'build.mjs', 'graph-build.mjs', 'serve.mjs', 'config.mjs', 'mcp.mjs', 'roster.mjs', 'check.mjs', 'setup', 'package.json', 'package-lock.json',
   'office.config.json', 'office.agents.json', 'skills.mjs', 'skills', 'learn.mjs', 'onboard.mjs', 'routines.mjs', 'usage.mjs', 'teams.mjs', 'CLAUDE.md', 'README.md', 'SKILLS.md', 'CHANGELOG.md', 'LICENSE', 'assets/readme-hero.jpg'];
 

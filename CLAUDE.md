@@ -98,6 +98,7 @@ When the owner says "every Monday …", "each morning …", "on a schedule", "au
 - `id` short, unique, lower-case. `dept` one of the three. `agent` an id from the roster in that department; pick the seat whose `does` matches, and say which one you chose.
 - `text` is what the agent is asked to do, written as the owner would type it. `title` is the card on the board (under 90 characters).
 - `when`: `{"kind":"daily","at":"HH:MM"}` · `{"kind":"weekdays","at":"HH:MM"}` · `{"kind":"weekly","days":[1,4],"at":"HH:MM"}` (0 = Sunday) · `{"kind":"hourly","every":1,"from":"09:00","to":"17:00","weekdaysOnly":true}` · `{"kind":"minutes","every":2}` (filming only). Times are the machine's local clock, 24-hour.
+- `when.start`: `"YYYY-MM-DD"`, optional (V3.2.1) — the routine starts on that date and never fires before it ("from next Monday", "starting 5 October"). Leave it out to start now. The owner can also set one by clicking a day in the calendar (P) with REPEAT on.
 - `needsOk` (default true): the result waits in WAITING ON APPROVAL for the owner's tick before the agent sends, pays or changes anything. Leave it on unless the routine only reads and reports (a triage, a list, a reconciliation), and say which you chose and why.
 - `paused: true` keeps it on the timetable without firing.
 - `model`: `sonnet`, `opus` or `fable`, only when the owner names one; otherwise leave it out and the agent's or the office's model applies (the task beats the routine beats the agent beats the office).
@@ -105,6 +106,10 @@ When the owner says "every Monday …", "each morning …", "on a schedule", "au
 - `team: true` when the owner wants the whole department on it ("as a team", "get the team to …"): the department lead owns the routine (set `agent` to the lead's id; a specialist id is moved to the lead), plans the pieces when it fires, the desks work at once, the lead writes the final. Leave it out for a one-desk routine — a team costs two to four runs plus the lead's two.
 
 The server re-reads the file every 20 seconds, so a routine lands without a restart; its next run is computed from the moment it is read. Run state (next run, last run) lives in `data/routines.json`, never in the brain file. After writing: run `npm run check` (it validates every routine and names every problem: unknown agent, wrong department, incomplete schedule, duplicate id), then tell the owner the title, the schedule in words, which agent has it, whether it waits for their OK, and that it shows under the SCHEDULED chip with a RUN NOW button to try it straight away.
+
+## A task for a date (the calendar)
+
+When the owner says "on Friday, …", "next Tuesday at 10, …", "on the 5th, …" for a one-off (not "every"), that is a **scheduled task**, not a routine. The office does these itself: the owner clicks the day in the calendar (P), or the page posts `{ "dept", "text", "at": <ms or ISO> }` to `/api/tasks`. There is no file to write for them (they live in `data/tasks.json`, state `scheduled`, fired by the server's clock); tell the owner to press P and click the day, and say what to type.
 
 ## Changing the connectors
 

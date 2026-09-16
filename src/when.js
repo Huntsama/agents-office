@@ -8,7 +8,8 @@
 //          days: [0..6]         (weekly: 0 = Sunday)
 //          every: N             (hourly: every N hours · minutes: every N minutes)
 //          from, to: 'HH:MM'    (hourly: the window, default the whole day)
-//          weekdaysOnly: true   (hourly: skip Saturday and Sunday) }
+//          weekdaysOnly: true   (hourly: skip Saturday and Sunday)
+//          start: 'YYYY-MM-DD'  (optional, V3.2.1 calendar: nothing fires before this date — a routine set for the future) }
 
 const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -113,20 +114,29 @@ export function parseWhen(input) {
   return null;
 }
 
-/** The REPEAT picker → a schedule. cadence: daily · weekdays · mon…sun · hourly · at: 'HH:MM' */
-export function fromPicker(cadence, at) {
+/** The REPEAT picker → a schedule. cadence: daily · weekdays · mon…sun · hourly · at: 'HH:MM' · start: 'YYYY-MM-DD' (calendar) */
+export function fromPicker(cadence, at, start) {
   const t = /^\d{2}:\d{2}$/.test(at || '') ? at : '08:00';
-  if (cadence === 'daily') return { kind: 'daily', at: t };
-  if (cadence === 'weekdays') return { kind: 'weekdays', at: t };
-  if (cadence === 'hourly') return { kind: 'hourly', every: 1, from: '09:00', to: '17:00', weekdaysOnly: true };
-  const d = dayIndex(cadence);
-  if (d >= 0) return { kind: 'weekly', days: [d], at: t };
-  return { kind: 'weekdays', at: t };
+  let w;
+  if (cadence === 'daily') w = { kind: 'daily', at: t };
+  else if (cadence === 'weekdays') w = { kind: 'weekdays', at: t };
+  else if (cadence === 'hourly') w = { kind: 'hourly', every: 1, from: '09:00', to: '17:00', weekdaysOnly: true };
+  else { const d = dayIndex(cadence); w = d >= 0 ? { kind: 'weekly', days: [d], at: t } : { kind: 'weekdays', at: t }; }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(start || '')) w.start = start;
+  return w;
 }
+const startMs = when => when && /^\d{4}-\d{2}-\d{2}$/.test(when.start || '') ? new Date(when.start + 'T00:00:00').getTime() : null;
+/** "12 Oct" — a short date for the words the office says back. */
+export const shortDate = ts => { const d = new Date(ts); return `${d.getDate()} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()]}`; };
 
 /** A schedule → the words the office says back. */
 export function describe(when) {
   if (!when) return '';
+  const base = describeBase(when);
+  const s = startMs(when);
+  return base && s && s > Date.now() ? `${base} · from ${shortDate(s)}` : base;
+}
+function describeBase(when) {
   const at = when.at ? ' · ' + when.at : '';
   switch (when.kind) {
     case 'minutes': return `every ${when.every} min`;
@@ -146,6 +156,7 @@ export function describe(when) {
 /** Is the schedule complete enough to run? */
 export function valid(when) {
   if (!when || typeof when !== 'object') return false;
+  if (when.start !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(when.start || '')) return false; // a start date, if given, is YYYY-MM-DD
   const t = s => /^\d{2}:\d{2}$/.test(s || '');
   if (when.kind === 'minutes') return Number.isInteger(when.every) && when.every >= 1;
   if (when.kind === 'hourly') return Number.isInteger(when.every) && when.every >= 1 && (!when.from || (t(when.from) && t(when.to) && when.from < when.to));
@@ -158,6 +169,7 @@ const mins = s => { const [h, m] = s.split(':').map(Number); return h * 60 + m; 
 /** The next time the schedule is due, strictly after `from` (ms, local time). */
 export function nextRun(when, from = Date.now()) {
   if (!valid(when)) return null;
+  const s = startMs(when); if (s && s - 1 > from) from = s - 1; // a routine that starts on a date: nothing before that midnight
   const f = new Date(from);
   if (when.kind === 'minutes') { const step = when.every * 60000; return Math.floor(from / step) * step + step; }
   if (when.kind === 'hourly') {
@@ -182,6 +194,12 @@ export function nextRun(when, from = Date.now()) {
   return null;
 }
 
+/** Every due time in (from, to], at most `limit` — the calendar projects a routine forward with this. */
+export function occurrences(when, from, to, limit = 400) {
+  const out = []; let t = nextRun(when, from);
+  while (t && t <= to && out.length < limit) { out.push(t); t = nextRun(when, t); }
+  return out;
+}
 /** "in 2 min" · "at 08:00" · "Mon 09:00" · "Fri 16:00" — the countdown the cards show. */
 export function untilText(ts, now = Date.now()) {
   if (!ts) return '—';

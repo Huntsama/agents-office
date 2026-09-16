@@ -14,6 +14,8 @@ machine.
 
 **License, in plain English:** free for personal and internal use. You may not sell it, resell it,
 or build a paid product on it. (Formal terms: PolyForm Noncommercial 1.0.0 — see [LICENSE](LICENSE).)
+The page carries the Sahni.ai mark at the bottom-left and a licence line along the bottom; the licence asks
+that notices stay, so leave them in place.
 
 ## What you need
 
@@ -189,6 +191,7 @@ The task box grows as you type (Shift+Enter for a new line, Enter adds). The ⤢
   `pause …`, `resume …`, `run … now` and `delete …` work with a few words from the name.
 - **Ask Claude Code.** Routines live in `<brain>/Agents Office/routines.json`; `CLAUDE.md` tells
   Claude Code how to write one.
+- **Click a day in the calendar** (P) with REPEAT on: a routine that starts on that date.
 
 Where they show: a **SCHEDULED** chip in the Task Status panel with a countdown on every routine
 and RUN NOW / PAUSE / DELETE on each; a next-up line under the chips; a SCHEDULED column on the
@@ -207,6 +210,25 @@ open. A run missed while the machine was asleep or the office was off is caught 
 comes back, marked LATE; never more than one catch-up per routine. Every firing is a line in the
 terminal and a task in the panel, so "did it run" is never a guess. For filming, `every 2
 minutes` is accepted, though the picker does not offer it.
+
+## The calendar: everything on the day it belongs to
+
+Press **P**, or the CALENDAR button in the top bar beside the approval counter. One quiet screen: finished tasks on the day they finished, today's work on today,
+tasks you have scheduled for a date, and every routine projected forward on the days it will
+fire — dashed cards with a ⏱, one per run. Month or week; ← → move, T is today. A rail on the
+left lists the routines themselves (cadence, who has it, next run, paused, waits for your OK), so
+the timetable is never a guess; click one to see only its days. Filters by department, routines
+on or off, done on or off, and a search box. Click a card: a finished task opens the agent's chat
+with the deliverable; a routine run shows RUN NOW, PAUSE, DELETE; a scheduled task can be cancelled.
+
+**Click any day to schedule.** Write what should happen, pick the department, the time and the
+model, press ADD: Claude names the agent now and the office runs it at that minute, page open or
+not, and it lands in the panel like any task (waiting for your OK if it would send anything). A
+run missed while the office was off happens once when it comes back, marked LATE. Switch on
+**REPEAT**, pick the cadence, and it becomes a routine that starts on that date — `every weekday
+· 08:00 · from 5 Oct` — and shows on the grid from that day forward and never before it
+(Emails, Accounting and Sales, as routines are). Scheduled tasks also show under the SCHEDULED
+chip in the panel and in the SCHEDULED column on the board, with CANCEL.
 
 ## Agent Teams: the lead splits it across the desks
 
@@ -305,6 +327,7 @@ every note they read, so your graph grows as the office works.
 | `1` to `6` | Marketing, Emails, Sales, Operations, Finance, Delivery |
 | `B` | The company board: every department, scheduled to done |
 | `G` | The Brain graph |
+| `P` | The calendar: tasks and routines on their days; click a day to schedule |
 | `C` | Chat with the department lead |
 | `X` | Send two agents to meet at the Brain |
 | `V` | Full screen view with dimmed lighting |

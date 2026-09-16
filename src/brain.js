@@ -6,7 +6,9 @@
 // its department's hub). The Task Status panel carries a small Brain strip — last read, notes
 // added today, Open the Brain — and G / clicking the pod opens the full-screen Obsidian graph.
 import * as THREE from 'three';
-import { BRAIN } from './braingraph.js';
+import { BRAIN as BRAIN0 } from './braingraph.js';
+import { PROFILE } from './profile.js';
+const BRAIN = (PROFILE && PROFILE.graph && PROFILE.graph.nodes && PROFILE.graph.nodes.length) ? PROFILE.graph : BRAIN0; // INDUSTRY PROFILE: the demo company's own graph
 import { AGENTS } from './data.js';
 
 const GROUP_COL = {
@@ -299,7 +301,7 @@ export function initBrain({ scene, brainGroup, getR, esc, hud, toScreen, getCame
     }
     requestAnimationFrame(draw);
   }
-  let owner = 'YOUR NOTES'; // V3.1: the business name when served (was hard-coded to one company)
+  let owner = PROFILE && PROFILE.company ? String(PROFILE.company).toUpperCase() : 'YOUR NOTES'; // V3.1: the business name when served (was hard-coded to one company); INDUSTRY PROFILE: the demo company
   function setOwner(name) { owner = String(name || 'YOUR NOTES').toUpperCase(); if (openNow) meta.textContent = `${owner} · ${state.notes.toLocaleString('en-NZ')} NOTES · ${links.length} LINKS`; }
   function open() {
     if (openNow) return;

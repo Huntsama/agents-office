@@ -37,6 +37,9 @@
   }
   #topbar .brand { font-family: var(--serif); font-size: 21px; letter-spacing: .04em; }
   #topbar .brand .ver { font-size: 13px; letter-spacing: .16em; color: var(--grey); vertical-align: 3px; margin-left: 2px; }
+  /* INDUSTRY PROFILE (12 Sep 2026): the demo company beside the brand */
+  #topbar .brand .co { font-size: 15px; letter-spacing: .02em; color: var(--grey); margin-left: 12px; white-space: nowrap; }
+  #topbar .brand .co::before { content: '·'; margin-right: 12px; }
   #topbar .tag {
     font-size: 11px; letter-spacing: .14em; color: var(--grey);
     border: 1px solid var(--hairline); border-radius: 99px; padding: 4px 10px;
@@ -702,6 +705,16 @@
   .tp-model.set { color: var(--ink); }
   .tp-cmd .tp-rep { font-size: 8.5px; padding: 4px 7px; }
   .tp-cmd .tp-add { padding: 6px 10px; font-size: 9.5px; }
+  /* V3.2 (16 Sep) Agent Teams: the TEAM toggle beside REPEAT, the TEAM / PIECE chips, ↳ on a piece row */
+  .tp-team { font-family: var(--ui); font-size: 8.5px; letter-spacing: .14em; font-weight: 700; background: none; border: 1px solid var(--hairline); color: var(--grey);
+    border-radius: 99px; padding: 4px 7px; cursor: pointer; white-space: nowrap; transition: all .3s var(--ease); }
+  .tp-team:hover { border-color: var(--ink); color: var(--ink); }
+  .tp-team.on { background: var(--ink); color: var(--cream); border-color: var(--ink); }
+  .tp-team[hidden] { display: none; }
+  .tp-team-chip { font-size: 7.5px; letter-spacing: .12em; font-weight: 700; border: 1px solid var(--ink); color: var(--ink); border-radius: 99px; padding: 0 5px; vertical-align: 1px; }
+  .tp-row.piece .tp-t::before { content: '↳ '; color: var(--grey); }
+  body.dark .tp-team { border-color: var(--hairline); color: var(--grey); background: #1B1C21; }
+  body.dark .tp-team.on { background: var(--ink); color: var(--cream); }
   /* V3.6 the usage gauge, top bar: SESSION [bar] 29% · WEEK [bar] 39% — the plan's own numbers */
   .tm-usage { display: flex; align-items: center; gap: 6px; margin-left: 8px; font-family: var(--ui); font-size: 8.5px; letter-spacing: .14em; font-weight: 700; color: var(--grey); white-space: nowrap; cursor: default; }
   .tm-usage b { font-family: var(--serif); font-weight: 400; font-size: 13px; letter-spacing: 0; color: var(--ink); font-variant-numeric: tabular-nums; }
@@ -942,6 +955,7 @@
       <select class="tp-model" title="which model runs this (the office default unless you change it)"></select>
       <select class="tp-effort" title="how hard it thinks: Auto is the model's own level (Opus runs at high); Low to Max as Claude Code names them"></select>
       <button class="tp-rep" title="repeat on a schedule (or just say when: every weekday at 8am, …)">REPEAT</button>
+      <button class="tp-team" title="a team: the department lead splits the task across its desks, they work at the same time, the lead writes the final (or just say “as a team”)">TEAM</button>
       <span class="sp"></span>
       <button class="tp-add">ADD</button>
     </div>

@@ -102,6 +102,7 @@ When the owner says "every Monday …", "each morning …", "on a schedule", "au
 - `paused: true` keeps it on the timetable without firing.
 - `model`: `sonnet`, `opus` or `fable`, only when the owner names one; otherwise leave it out and the agent's or the office's model applies (the task beats the routine beats the agent beats the office).
 - `effort`: `low`, `medium`, `high`, `xhigh` or `max`, only when the owner names one; otherwise the agent's, then the office's, then the model's own.
+- `team: true` when the owner wants the whole department on it ("as a team", "get the team to …"): the department lead owns the routine (set `agent` to the lead's id; a specialist id is moved to the lead), plans the pieces when it fires, the desks work at once, the lead writes the final. Leave it out for a one-desk routine — a team costs two to four runs plus the lead's two.
 
 The server re-reads the file every 20 seconds, so a routine lands without a restart; its next run is computed from the moment it is read. Run state (next run, last run) lives in `data/routines.json`, never in the brain file. After writing: run `npm run check` (it validates every routine and names every problem: unknown agent, wrong department, incomplete schedule, duplicate id), then tell the owner the title, the schedule in words, which agent has it, whether it waits for their OK, and that it shows under the SCHEDULED chip with a RUN NOW button to try it straight away.
 
@@ -115,12 +116,17 @@ The top bar shows the MCP servers **this machine's Claude Code** is connected to
   "deny": ["Stripe"],
   "departments": { "Slack": ["emails", "ops"] }
 },
-"tools": { "web": true }
+"tools": { "web": true, "browser": true },
+"teams": { "enabled": true, "max": 4 }
 ```
 
-`allow` empty means every connected server. `deny` keeps a server in the bar but out of the agents' hands. `departments` says which pods a server is wired to; unknown servers default to every pod. `tools.web` gives the agents web search.
+`allow` empty means every connected server. `deny` keeps a server in the bar but out of the agents' hands (`"Chrome"` works there too). `departments` says which pods a server is wired to; unknown servers default to every pod. `tools.web` gives the agents web search. `tools.browser` (V3.2 (16 Sep)) gives them the owner's own Chrome through Claude Code's Chrome integration — the run starts with `--chrome` and gets the `claude-in-chrome` server (open tabs, read pages, fill forms on sites the owner is signed in to); it needs the Claude in Chrome extension paired to this machine (`claude --chrome` once) and the Claude Code login. The bar shows a Chrome tile wired to every pod. `teams` (V3.2 (16 Sep)) is Agent Teams: `enabled` shows the TEAM button and makes "as a team" mean it; `max` caps the desks (2–6, default 4).
 
-Agents get only connected servers (plus web when enabled). They never get Bash, file tools or sub-agents. Their standing rule: read freely; send, post, pay, delete or change data outside this machine **only** when the owner's task explicitly asks for that exact action.
+Agents get only connected servers (plus web when enabled, plus the browser when enabled and paired). They never get Bash, file tools or sub-agents. Their standing rule: read freely; send, post, pay, delete or change data outside this machine **only** when the owner's task explicitly asks for that exact action — in the browser too.
+
+## Agent Teams
+
+When the owner says "as a team", "get the team on it", "spawn three teammates to …", or presses TEAM in the bar, the department **lead** takes the task and splits it into two to `teams.max` independent pieces on the desks whose `does` or skills fit; the pieces run at the same time, one Claude process each; teammates may leave one-line notes (`@lead: …`, `@<id>: …`) which reach the lead; the lead writes the final from the pieces. This is the office's own build of the shape (lead · teammates · shared piece list · notes) from separate headless Claude sessions — Claude Code's own agent teams only spawn in an interactive terminal, so they are not what runs here. Nothing to write for a team task; it is the same roster, briefs and skills. To make a seat a better teammate, improve its `does` (the lead splits by it) and its skills. A team routine is `"team": true` in `routines.json` with the lead as `agent`.
 
 ## Everything else
 

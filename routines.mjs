@@ -52,6 +52,10 @@ export function validate(r, agents, existing = []) {
   out.needsOk = r.needsOk !== false;
   out.paused = r.paused === true;
   if (Array.isArray(r.plan)) out.plan = r.plan.slice(0, 4).map(String);
+  if (r.team === true) { // V3.2 (16 Sep): a team routine — the department lead splits it across the desks, so the lead owns it
+    out.team = true; const lead = agents.find(x => x.department === out.dept && x.lead);
+    if (lead && a && !a.lead) out.agent = lead.id; // moved to the lead quietly: a problem would drop the routine
+  }
   if (r.model !== undefined && r.model !== '' && r.model !== null) { const m = String(r.model).toLowerCase().trim(); if (['sonnet', 'opus', 'fable'].includes(m)) out.model = m; else problems.push(`${out.id}: model must be sonnet, opus or fable (got "${r.model}")`); }
   if (r.effort !== undefined && r.effort !== '' && r.effort !== null) { const e = String(r.effort).toLowerCase().trim(); if (['low', 'medium', 'high', 'xhigh', 'max'].includes(e)) out.effort = e; else problems.push(`${out.id}: effort must be low, medium, high, xhigh or max (got "${r.effort}")`); }
   return { routine: out, problems };

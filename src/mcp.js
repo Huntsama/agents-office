@@ -11,6 +11,7 @@
 // Opened as a file (no server) the demo list below still plays.
 import * as THREE from 'three';
 import { MCP_LOGOS, MCP_BY_DEPT } from './mcplogos.js';
+import { applyAgentTools, profileShared } from './profile.js';
 
 // agent → tools they'd plausibly be driving (falls back to any connector in the dept's dock)
 export const AGENT_MCP = {
@@ -31,6 +32,7 @@ export const AGENT_MCP = {
   dlead: ['notion', 'gmail'], pco: ['notion'], qa: ['notion'], crep: ['pandadoc', 'notion'], cass: ['canva', 'notion'],
   dasst: ['canva'], ona: ['gmail', 'notion'],
 };
+applyAgentTools(AGENT_MCP); // INDUSTRY PROFILE (12 Sep 2026): per-industry demo file; no-op otherwise
 
 // screen axes in world space (iso azimuth 45°): SR = screen-right, FRONT = toward camera
 const SR = new THREE.Vector3(1, 0, -1).normalize();
@@ -153,7 +155,7 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors = null })
   // at overview all connector traffic originates from the top bar instead.
   // SHARED connectors (gmail: five depts; notion: every dept, V3.1) sit at the far RIGHT end
   // of the strip and each runs its OWN loom (below) instead of joining any dept's cluster/fan
-  const SHARED = LIVE ? connectors.shared : { notion: '#151414', gmail: '#EA4335' };
+  const SHARED = LIVE ? connectors.shared : (profileShared() || { notion: '#151414', gmail: '#EA4335' });
   const uniqKeys = [...new Set(Object.values(BY_DEPT).flat())].filter(k => !SHARED[k]);
   for (const k of ((LIVE && connectors.off) || [])) if (!uniqKeys.includes(k)) uniqKeys.push(k); // present but unusable: shown grey, never wired
   for (const k of Object.keys(SHARED)) uniqKeys.push(k);
@@ -167,7 +169,8 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors = null })
       img.alt = img.title = LOGOS[k].name;
       if (STATUS[k] && STATUS[k] !== 'connected') { // real list: a server that is there but not usable
         img.classList.add('off', 'st-' + STATUS[k]);
-        img.title = LOGOS[k].name + ' — ' + ({ 'needs-auth': 'needs authentication (run claude, then /mcp)', failed: 'failed to connect', pending: 'connecting…', denied: 'connected · blocked for agents in office.config.json' }[STATUS[k]] || STATUS[k]);
+        img.title = LOGOS[k].name + ' — ' + (k === 'chrome' && STATUS[k] === 'pending' ? 'Claude in Chrome extension not paired on this machine — run `claude --chrome` once, then restart the office' // V3.2 (16 Sep)
+          : ({ 'needs-auth': 'needs authentication (run claude, then /mcp)', failed: 'failed to connect', pending: 'connecting…', denied: 'connected · blocked for agents in office.config.json' }[STATUS[k]] || STATUS[k]));
       }
       img.style.setProperty('--d', (0.15 + i * 0.09) + 's'); // staggered pop-in on load
       img.addEventListener('animationend', (e) => { if (e.animationName === 'tcin') img.classList.add('in'); });

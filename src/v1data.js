@@ -1,4 +1,5 @@
 // v1 data extracted VERBATIM from command-centre.html (lines 646-666, 671-1095, 2176, 2975-3021).
+import { applyV1 } from './profile.js';
 // Do not hand-edit agent content here — it is the single source of truth shared with v1.
 export const clockStr = () => new Date().toLocaleTimeString("en-NZ",{hour:"2-digit",minute:"2-digit",hour12:false});
 export const slug = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g,"-");
@@ -838,3 +839,6 @@ export const FILE_GEN = {
   recon: ()=>({ icon:'🔗', name:'rec-status-'+clockStr().replace(':','')+'.md', meta:'bank feed status · click to view',
     content:`RECONCILIATION STATUS — ${clockStr()}\n\nthis week\n  matched .............. 118 transactions\n  auto-match rate ...... 94%\n  stripe payouts ....... 4 split & matched (23 invoices)\n\nopen items (1)\n  ${money(340)} deposit, 36h old — theory: manual transfer\n  for a plan upgrade. INVOICING confirming with customer.\n  escalates to ACCOUNTING LEAD at 48h per rule.` }),
 };
+
+// INDUSTRY PROFILE (12 Sep 2026): the fake world + every persona come from the profile in a per-industry demo file. No-op otherwise.
+applyV1({ P, V1, FILE_GEN, clockStr });

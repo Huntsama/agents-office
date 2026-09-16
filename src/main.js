@@ -2,7 +2,9 @@
 // Far: clean pods + agent counts (Image 1 read). Near: diorama with 3D people + holo screens (Image 2 read).
 import * as THREE from 'three';
 import { TOKENS, DEPTS, DEPT_KEYS, AGENTS, LAYOUT, WORKLINES, APPROVAL_ASKS, APPROVAL_BY_AGENT } from './data.js';
+import { hasScreens, makeScreen } from './screens.js'; // live screens (14 Sep): no-op without window.SCREENS
 import { V1, FILE_GEN, STATS, KPIS, P, rnd, ri, person, money } from './v1data.js';
+import { PROFILE, profileRows, profileTickKpi, profileMockup, applyTopbar } from './profile.js';
 import {
   PLINTH_H, mat, rbox, makePlinth, makeFloorTitle, makeDesk, makeChair,
   makePerson, posePerson, poseWork, makePlant, makeServerRack, makeMeetingTable, makeWalkway, makeWarnSprite,
@@ -11,6 +13,7 @@ import { initMcp } from './mcp.js';
 import { loadConnectors } from './connectors.js';
 import { initTasks } from './tasks.js';
 import { initBrain } from './brain.js';
+import { initHero, HERO } from './hero.js'; // sahni.ai/custom hero mode (16 Sep 2026): opt-in via window.HERO, no-op otherwise
 let tasks = null; // V3 task boards — initialised after the rail constants exist
 
 /* ---------- renderer / scene / camera ---------- */
@@ -213,9 +216,10 @@ for (const a of AGENTS) {
   const station = new THREE.Group();
   station.position.copy(base);
   station.rotation.y = ANG;
-  const { group: desk, screenSet } = makeDesk(dept.chip);
+  const live = hasScreens() ? makeScreen(a.id, a.name) : null;
+  const { group: desk, screenSet } = makeDesk(dept.chip, live);
   station.add(desk);
-  screenSets.push({ screenSet, dept: a.dept });
+  screenSets.push({ screenSet, dept: a.dept, live });
   const chair = makeChair();
   chair.position.set(0, 0, 1.75);
   station.add(chair);
@@ -244,6 +248,7 @@ for (const a of AGENTS) {
     stand: person.position.clone().add(rot(new THREE.Vector3(1.5, 0, 0.15))),
     state: 'working', bob: Math.random() * 10, path: null, pathI: 0, speed: 9.5, ask: null,
     v1: V1.find(x => x.id === a.id), feed: [],
+    station, desk, screenSet, // hero mode reaches the monitor and the desk through these
   };
 }
 
@@ -265,6 +270,7 @@ const mcp = {
 };
 let mcpUsage = null;
 loadConnectors().then(c => { mcpImpl = initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors: c }); if (mcpDark) mcpImpl.setDark(true); if (mcpUsage) mcpImpl.setUsage(mcpUsage); });
+applyTopbar(); // INDUSTRY PROFILE (12 Sep 2026): the demo company's name beside the brand
 
 // plants on outer corners
 for (const k of ['emails', 'sales', 'marketing', 'ops', 'delivery']) {
@@ -314,7 +320,7 @@ function tickDim(dt) {
 /* ---------- department billboards — v1's exact agreed metric rows + amber approval row ---------- */
 const kv = id => KPIS.find(k => k.id === id).val;
 let brainNotes = brain.state.notes;
-const BB_ROWS = {
+const BB_ROWS = profileRows() || {
   emails: [
     ['EMAILS SENT', () => STATS.emailsSent],
     ['REPLIES DRAFTED', () => STATS.drafts]],
@@ -337,6 +343,7 @@ const BB_ROWS = {
   brain: [
     ['NOTES INDEXED', () => brainNotes.toLocaleString('en-NZ')]],
 };
+if (PROFILE && !BB_ROWS.brain) BB_ROWS.brain = [['NOTES INDEXED', () => brainNotes.toLocaleString('en-NZ')]];
 for (const k of [...DEPT_KEYS, 'brain']) {
   const dept = DEPTS[k];
   const n = AGENTS.filter(a => a.dept === k).length;
@@ -664,7 +671,12 @@ function enterFocus(k, pendingAgentId) {
     return;
   }
   if (focused === k && !pendingAgentId) return;
-  if (focused && focused !== k) { rail.classList.remove('open', 'agentOpen'); modalOpen = null; }
+  if (focused && focused !== k) {
+    rail.classList.remove('open', 'agentOpen'); modalOpen = null;
+    // dept → dept without passing through overview: the old billboard was hidden when it flew into the
+    // rail (flyBillboardIntoRail) and only exitFocus restores it — bring it back or it stays gone (AJ, 15 Sep)
+    if (focused !== 'brain' && deptRT[focused] && deptRT[focused].badge) deptRT[focused].badge.style.display = '';
+  }
   focused = k;
   if (tasks) tasks.onFocusChange(k);
   focusDimTarget = 1;
@@ -857,6 +869,7 @@ function ago(ts) {
 /* ---------- approval mockups — show AJ exactly what he's approving ---------- */
 function mockupFor(id) {
   const chip = DEPTS[R[id].a.dept].chip;
+  const pm = profileMockup(R[id].a.dept, R[id].ask, R[id].a.name, esc); if (pm) return pm; // INDUSTRY PROFILE: the trade's own document, or a cover sheet for this ask
   switch (id) {
     case 'apay': return `<div class="mk mk-doc">
       <div class="d-brand">INVOICE AUDIT — #218</div>
@@ -1018,6 +1031,7 @@ function fireAgentEvent(seedTs) {
     if (chatHist[r.a.id]) chatPush(r.a.id, { who: 'work', i: ev.i, text });
     if (ev.kpi) { const k = KPIS.find(x => x.id === ev.kpi.id); if (k) k.val += ev.kpi.n; }
     const d = r.a.dept, roll = Math.random();
+    profileTickKpi(d, roll); // INDUSTRY PROFILE: the pod's first number ticks up
     if (d === 'emails') { if (roll < 0.45) STATS.emailsSent++; else if (roll < 0.7) STATS.drafts++; }
     else if (d === 'delivery' && roll < 0.2) STATS.reports++;
     else if (d === 'sales') {
@@ -1241,8 +1255,13 @@ function tickSim(now, dt) {
     fireAgentEvent();
     nextMetricAt = now + 2600 + Math.random() * 3800;
   }
+  // live screens: every monitor plays its own session; slower cadence when the camera is far away
+  if (hasScreens()) {
+    const slow = view.zoom < 1.4;
+    for (const ss of screenSets) if (ss.live) ss.live.tick(now, slow);
+  }
   // rotate desk screen content — a couple of screens refresh every beat so the room reads busy
-  if (Math.floor(now / 1800) !== Math.floor((now - dt * 1000) / 1800)) {
+  else if (Math.floor(now / 1800) !== Math.floor((now - dt * 1000) / 1800)) {
     const n = 1 + (Math.random() < 0.5 ? 1 : 0);
     for (let i = 0; i < n; i++) {
       const ss = screenSets[Math.floor(Math.random() * screenSets.length)];
@@ -1353,7 +1372,9 @@ tasks = initTasks({
   toScreen: (p) => toScreen(p), reframe,
 });
 view.target.set(...overviewPos());
-addEventListener('resize', () => { if (!focused && !tween) view.target.set(...overviewPos()); });
+addEventListener('resize', () => { if (!focused && !tween && !HERO) view.target.set(...overviewPos()); });
+const hero = HERO ? initHero({ THREE, scene, R, AGENTS, deptRT, LAYOUT, DEPTS, DEPT_KEYS, view, camera, spawnEmote, isBusy: () => !!focused || !!tween || !!drag }) : null;
+if (HERO && HERO.target) { view.target.set(...HERO.target); view.zoom = HERO.zoom || view.zoom; }
 
 /* ---------- boot ---------- */
 function resize() {
@@ -1379,7 +1400,7 @@ resize();
   }
   syncOverviewBtn();
 }
-window.CC = { flyTo, zoomToDept, zoomOut, zoomToApproval, requestApproval, openAgent, view, applyCamera, R, emotes,
+window.CC = { hero, flyTo, zoomToDept, zoomOut, zoomToApproval, requestApproval, openAgent, view, applyCamera, R, emotes,
   setCam, setDark, brain, connectorReveal: () => mcp.startReveal(performance.now()),
   toggleBoard: () => tasks.toggle(), addTask: (agentId, title) => tasks.addTask(agentId, title), tasks, routines: () => tasks.routines };
 
@@ -1390,6 +1411,7 @@ function loop(now) {
   applyCamera();
   tickDim(dt);
   tickSim(now, dt);
+  if (hero) hero.tick(now, dt);
   tickLOD();
   tasks.tick(now);
   mcp.tick(now, dt, view, camera, focused, focusDim);

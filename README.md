@@ -68,12 +68,15 @@ Decide what the agents may touch in `office.config.json`:
 
 ```json
 "mcp": { "allow": [], "deny": ["Stripe"], "departments": { "Slack": ["emails", "ops"] } },
-"tools": { "web": true }
+"tools": { "web": true, "browser": true },
+"teams": { "enabled": true, "max": 4 }
 ```
 
 `allow` empty means every connected server. `deny` keeps a server in the bar but out of the
-agents' hands. `departments` says which pods a server is wired to (known brands have a default;
-anything else feeds every pod). Set `tools.web` to `false` to keep the agents off the web.
+agents' hands (`"deny": ["Chrome"]` works the same for the browser). `departments` says which pods
+a server is wired to (known brands have a default; anything else feeds every pod). Set `tools.web`
+to `false` to keep the agents off the web, `tools.browser` to `false` to keep them out of your
+Chrome (see [Claude in Chrome](#claude-in-chrome-the-agents-can-use-your-browser)).
 Tool use needs the Claude Code login; on an `ANTHROPIC_API_KEY` the agents write from your notes only.
 
 ## Make the agents yours
@@ -205,6 +208,53 @@ comes back, marked LATE; never more than one catch-up per routine. Every firing 
 terminal and a task in the panel, so "did it run" is never a guess. For filming, `every 2
 minutes` is accepted, though the picker does not offer it.
 
+## Agent Teams: the lead splits it across the desks
+
+Some jobs are three jobs. Press **TEAM** in the bar, or just say it (`as a team, …`, `get the
+team on this`, `spawn three teammates to …`), and the task goes to the department lead instead of
+one specialist. The lead reads your notes and splits the request into two to four independent
+pieces, each on the desk whose job or skills fit it (it may keep one). The pieces run **at the
+same time**: one Claude process per desk, each with its own context, its own brief, skills and
+lessons, and the same connectors. Each teammate can leave a note for another teammate or the lead
+(`@lead: the two hook lines clash`); the notes pop as 💬 over the desks and reach the lead. When the
+last piece is in, the lead writes the finished deliverable from all of them and ends it with one
+line saying who did what.
+
+What you see: the lead's card with a ⚑ and a TEAM chip, a ↳ piece card on every teammate's desk,
+all IN PROGRESS together; each finished piece lands in that teammate's own chat and walks back to
+the lead as a 📋; the lead's card finishes last with the combined result, and the note in your
+brain carries the final, then every piece under its own heading, then the notes they left each
+other. `revise: …` to the lead reworks the final from the same pieces without re-running them.
+A team task that needs your OK waits like any other; APPROVE and the lead alone does the outbound
+step. Routines can be teams too (`"team": true` in `routines.json`; the lead owns it).
+
+Why the office builds this itself: Claude Code has its own agent teams, but it only spawns
+teammates in an interactive terminal, never in the headless runs the office makes. What runs here
+is the same shape (lead, teammates, a shared piece list, notes between them), made of real
+separate Claude sessions on your login. A team costs more of your plan than one agent: two to four
+runs plus the lead's plan and final. Use it for work with independent parts — angles, a review
+from three sides, a launch with a copy, a design and a schedule piece — not for one linear job.
+`teams.max` in `office.config.json` caps the desks (default 4); `teams.enabled: false` hides the
+button and makes "as a team" an ordinary task.
+
+## Claude in Chrome: the agents can use your browser
+
+With the [Claude in Chrome extension](https://chromewebstore.google.com/detail/claude/fcoeoabgfenejglbffodgkkbkcdhcgfn)
+installed and paired to this machine's Claude Code (`claude --chrome` once, follow the prompt),
+the office starts every run with Chrome enabled and the agents get the browser as a tool: open a
+tab, read a page, search, fill a form, on any site you are already signed in to. That reaches the
+web apps that have no connector: a supplier portal, your accounting dashboard, a job board, a
+Google Doc. The bar shows a **Chrome** tile wired to every pod; it lights when an agent is in the
+browser, and the deliverable and the note say so (`Used: Chrome — read the pricing page`).
+
+The rule is the connector rule: look and read freely; type into a form, submit, post, send, buy or
+change anything on a site **only** when your task explicitly asks for that exact action. A login
+page, a code or a CAPTCHA stops the agent, which says so. Browser actions run in your real Chrome
+window, so you will see tabs open and close while an agent works; the agent closes what it opened.
+It needs the Claude Code login (not an API key), the extension paired, and Chrome running. Not
+paired yet? The tile is grey and says what to do on hover. `tools.browser: false` in
+`office.config.json` keeps the agents out of the browser altogether (and off the bar).
+
 ## Which model, and how much of your plan
 
 Every run names its model. Three, by name: **Sonnet**, **Opus**, **Fable**. Sonnet is the
@@ -265,7 +315,7 @@ every note they read, so your graph grows as the office works.
 
 ```bash
 npm run check         # build, offline smoke test in a headless browser, server smoke test
-npm run check:live    # the same, plus one real task and one chat turn through Claude
+npm run check:live    # the same, plus real runs through Claude: a task, a routine, an Opus task, a team, a browser task, a chat turn
 ```
 
 Every check prints ✓ or ✗ with the reason. The Beta was built against this loop and it is the

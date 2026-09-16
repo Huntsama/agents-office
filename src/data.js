@@ -1,4 +1,5 @@
 // Agents Office v2 — roster + design tokens (ported from v1 command-centre.html)
+import { applyData } from './profile.js';
 
 // Nominal.so tokens (locked design language, 30 Jul 2026)
 export const TOKENS = {
@@ -168,3 +169,6 @@ export const WORKLINES = {
     '▸ meeting scheduled: enzo × tess',
   ],
 };
+
+// INDUSTRY PROFILE (12 Sep 2026): a per-industry demo file rewrites pods, seats, rows, asks and screen lines in place. No-op without window.PROFILE.
+applyData({ DEPTS, AGENTS, BILLBOARDS, APPROVAL_ASKS, APPROVAL_BY_AGENT, WORKLINES });

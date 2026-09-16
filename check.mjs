@@ -229,6 +229,64 @@ await step('usage: the gauge parses Claude\'s answer and the office\'s own count
   return `parses percent + reset · unknown shape → null · 2 runs = 14,060 tokens · window resets after 5 h · login token on this machine: ${tok ? 'found' : 'none'}`;
 });
 
+/* ---------- 1e. Agent Teams + Claude in Chrome (V3.2 (16 Sep)) ---------- */
+await step('teams: the sentence says team, the plan is checked against the seats, notes are parsed', async () => {
+  const t = await import('./teams.mjs');
+  for (const ok of ['as a team, write three hooks', 'get the team on this', 'spawn three teammates to plan the launch', 'split it across the desks']) if (!t.intent(ok)) throw new Error('not a team: ' + ok);
+  for (const no of ['write three hooks', 'draft the team offsite email', 'reply to the client']) if (t.intent(no)) throw new Error('wrongly a team: ' + no);
+  if (t.askedSize('spawn three teammates') !== 3 || t.askedSize('as a team') !== null) throw new Error('askedSize');
+  const seats = [{ id: 'mlead', lead: true }, { id: 'ada' }, { id: 'newt' }, { id: 'gfx' }], lead = seats[0];
+  const plan = t.parsePlan('```json\n{"pieces":[{"agent":"ada","title":"A","text":"a"},{"agent":"ada","title":"dup","text":"x"},{"agent":"ghost","title":"g","text":"x"},{"agent":"newt","title":"N","text":"n"},{"agent":"gfx","title":"G","text":"g"},{"agent":"mlead","title":"M","text":"m"}],"why":"split"}\n```', { seats, lead, max: 3 });
+  if (plan.solo || plan.pieces.map(p => p.agent).join() !== 'ada,newt,gfx') throw new Error('plan: ' + JSON.stringify(plan));
+  const solo = t.parsePlan('not json at all', { seats, lead, max: 3, fallback: { title: 'T', text: 'x' } });
+  if (!solo.solo || solo.pieces[0].agent !== 'mlead') throw new Error('no fallback to the lead');
+  const one = t.parsePlan('{"pieces":[{"agent":"ada","title":"A","text":"a"}]}', { seats, lead, max: 3, fallback: { title: 'T', text: 'x' } });
+  if (!one.solo || one.pieces[0].agent !== 'ada') throw new Error('a one-piece plan should be solo on that desk');
+  if (!/never one piece/.test(t.planPrompt({ business: 'x', deptName: 'y', lead: { name: 'L' }, seats: [], text: 't', max: 3 }).user)) throw new Error('the plan prompt must insist on a split');
+  const m = t.parseMessages('Heading\nbody\n@newt: use the June figure\n@lead: two hooks clash\n@nobody: ignored', ['ada', 'newt', 'gfx', 'mlead']);
+  if (m.messages.length !== 2 || m.messages[0].to !== 'newt' || m.messages[1].to !== 'lead' || !/@nobody/.test(m.body) || /@newt/.test(m.body)) throw new Error('messages: ' + JSON.stringify(m));
+  const sec = t.teamSection({ me: { id: 'ada' }, lead, pieces: plan.pieces, nameOf: id => id.toUpperCase() });
+  if (!/Your piece: A/.test(sec) || !/NEWT: N/.test(sec) || !/@lead|@newt/.test(sec)) throw new Error('team section: ' + sec.slice(0, 200));
+  const st = t.settings({ teams: { max: 99 } }); if (st.max !== 6 || !st.enabled) throw new Error('settings clamp: ' + JSON.stringify(st));
+  if (t.settings({ teams: { enabled: false } }).enabled) throw new Error('enabled false ignored');
+  const extra = t.noteExtra({ pieces: [{ agent: 'ada', title: 'A', result: 'r' }], messages: [{ from: 'ada', to: 'lead', text: 'x' }] }, id => id.toUpperCase());
+  if (!/## Team/.test(extra) || !/ADA → lead: x/.test(extra) || !/### ADA — A\nr/.test(extra)) throw new Error('note extra: ' + extra);
+  return 'intent · askedSize · plan (dedupe, unknown seats, cap, one desk → solo, none → the lead) · notes · section · settings · note';
+});
+await step('teams: a team routine is kept and moved to the department lead', async () => {
+  const { validate } = await import('./routines.mjs'); const { loadRoster } = await import('./roster.mjs');
+  const agents = loadRoster().agents;
+  const v = validate({ id: 'wk', dept: 'sales', agent: 'piper', title: 'x', text: 'x', when: { kind: 'weekly', days: [1], at: '09:00' }, team: true }, agents);
+  if (v.problems.length) throw new Error(v.problems.join(' | '));
+  if (v.routine.team !== true || v.routine.agent !== 'lexi') throw new Error('agent ' + v.routine.agent + ' team ' + v.routine.team);
+  const w = validate({ id: 'wk2', dept: 'sales', agent: 'piper', title: 'x', text: 'x', when: { kind: 'weekly', days: [1], at: '09:00' } }, agents);
+  if (w.routine.team !== undefined || w.routine.agent !== 'piper') throw new Error('a plain routine changed');
+  return 'team:true → lexi (the Sales lead) · plain routine untouched';
+});
+await step('browser: tools.browser puts --chrome and the Chrome server in the agents\' hands; off means --no-chrome', async () => {
+  const m = await import('./mcp.mjs');
+  if (m.toolId('claude-in-chrome') !== 'claude-in-chrome' || m.toolId('claude.ai Gmail') !== 'claude_ai_Gmail') throw new Error('toolId');
+  m.configure({ mcp: {}, tools: { browser: true } });
+  if (m.cliArgs().join() !== '--chrome') throw new Error('cliArgs on: ' + m.cliArgs());
+  m.fromInit({ mcp_servers: [{ name: 'claude-in-chrome', status: 'connected' }], tools: ['mcp__claude-in-chrome__navigate', 'mcp__claude-in-chrome__read_page'] });
+  const s = m.list().find(x => x.id === 'claude-in-chrome'); if (!s || s.key !== 'chrome' || s.name !== 'Chrome' || s.status !== 'connected' || s.tools.length !== 2) throw new Error('chrome server: ' + JSON.stringify(s));
+  if (!m.allowedTools().includes('mcp__claude-in-chrome')) throw new Error('not in allowedTools: ' + m.allowedTools());
+  if (!/Chrome browser/.test(m.promptText([])) || !/CAPTCHA/.test(m.promptText([]))) throw new Error('prompt does not explain the browser');
+  if (m.keyOf('mcp__claude-in-chrome__navigate') !== 'chrome' || m.namesOf(['mcp__claude-in-chrome__find'])[0] !== 'Chrome') throw new Error('keyOf/namesOf');
+  if (m.summary().browser?.on !== true || typeof m.summary().browser.installed !== 'boolean') throw new Error('summary.browser');
+  m.configure({ mcp: { deny: ['Chrome'] }, tools: { browser: true } });
+  if (m.allowedTools().includes('mcp__claude-in-chrome')) throw new Error('deny did not keep Chrome out of the agents\' hands');
+  m.configure({ mcp: {}, tools: { browser: false } });
+  if (m.cliArgs().join() !== '--no-chrome') throw new Error('cliArgs off: ' + m.cliArgs());
+  m.configure(cfg); // back to the office's own config
+  const logos = fs.readFileSync(path.join(ROOT, 'src', 'mcplogos.js'), 'utf8'); if (!/\n  chrome: \{ name: 'Chrome'/.test(logos)) throw new Error('no Chrome tile in src/mcplogos.js');
+  const b = m.browserState();
+  return `--chrome · mcp__claude-in-chrome allowed · deny works · --no-chrome when off · tile baked · this machine: ${b.installed ? 'extension paired' + (b.device ? ' (' + b.device + ')' : '') : 'extension NOT paired'}`;
+});
+await step('config: browser and teams default on, max 4', async () => {
+  const c = loadConfig(); if (c.tools.browser !== true || c.teams.enabled !== true || c.teams.max !== 4) throw new Error(JSON.stringify({ tools: c.tools, teams: c.teams }));
+});
+
 /* ---------- 2. offline smoke (Playwright) ---------- */
 let chromium = null;
 try { ({ chromium } = await import('playwright')); } catch { try { ({ chromium } = await import('playwright-core')); } catch {} }
@@ -258,6 +316,22 @@ else {
       const hint = await page.evaluate(() => document.querySelector('.tp-hint').textContent); if (!/Added/.test(hint)) throw new Error('hint: ' + hint);
       const row = await page.evaluate(() => [...document.querySelectorAll('.tp-row .tp-t')].some(e => /teaser/i.test(e.textContent))); if (!row) throw new Error('row not in the feed');
       return hint.trim().slice(0, 60);
+    });
+    await step('smoke: TEAM in the bar → the lead + piece cards on the desks (demo)', async () => { // V3.2 (16 Sep)
+      await page.waitForTimeout(2800); // the previous step's hint timer (2.6 s) would wipe our "Added" line mid-read
+      await page.click('.tp-dd'); await page.click('.tp-menu button[data-k="sales"]');
+      await page.fill('.tp-in', 'as a team, plan the spring outreach push');
+      await page.evaluate(() => document.querySelector('.tp-in').dispatchEvent(new Event('input', { bubbles: true })));
+      const pre = await page.evaluate(() => document.querySelector('.tp-hint').textContent); if (!/Team · SALES LEAD/.test(pre)) throw new Error('hint before Add: ' + pre);
+      await page.keyboard.press('Enter'); await page.waitForTimeout(700);
+      const hint = await page.evaluate(() => document.querySelector('.tp-hint').textContent); if (!/Added — SALES LEAD has it with/.test(hint)) throw new Error('hint: ' + hint);
+      const n = await page.evaluate(() => ({ lead: [...document.querySelectorAll('.tp-row .tp-t')].filter(e => /⚑ As a team, plan the spring/.test(e.textContent)).length, pieces: document.querySelectorAll('.tp-row.piece').length, chip: [...document.querySelectorAll('.tp-team-chip')].map(e => e.textContent) }));
+      if (n.lead !== 1 || n.pieces < 2 || !n.chip.some(c => /^TEAM [34]$/.test(c)) || !n.chip.includes('PIECE')) throw new Error(JSON.stringify(n));
+      await page.fill('.tp-in', 'draft the renewal email'); await page.evaluate(() => document.querySelector('.tp-in').dispatchEvent(new Event('input', { bubbles: true })));
+      const plain = await page.evaluate(() => document.querySelector('.tp-hint').textContent); if (/Team ·/.test(plain)) throw new Error('a plain sentence still reads as a team: ' + plain);
+      await page.click('.tp-team'); const on = await page.evaluate(() => document.querySelector('.tp-hint').textContent); if (!/Team · SALES LEAD/.test(on)) throw new Error('the TEAM toggle did not take: ' + on);
+      await page.click('.tp-team'); await page.fill('.tp-in', '');
+      return `${hint.trim().slice(0, 70)} · ${n.pieces} piece cards · chips ${[...new Set(n.chip)].join(' ')}`;
     });
     await step('smoke: a routine typed in the bar lands in SCHEDULED (demo)', async () => {
       await page.click('.tp-dd'); await page.click('.tp-menu button[data-k="emails"]');
@@ -379,6 +453,13 @@ else {
       const m = await n.json(); if (n.status !== 400 || !m.noSchedule) throw new Error('no schedule not named: ' + JSON.stringify(m));
       return j.error;
     });
+    await step('server: /api/health says teams and the browser are on; the bar has the Chrome tile', async () => {
+      if (!up.teams || up.teams.enabled !== true || up.teams.max !== 4) throw new Error('health.teams: ' + JSON.stringify(up.teams));
+      if (!up.browser || up.browser.on !== true) throw new Error('health.browser: ' + JSON.stringify(up.browser));
+      const m = await (await fetch(base + '/api/mcp')).json();
+      const c = m.servers.find(s => s.id === 'claude-in-chrome'); if (!c || c.key !== 'chrome' || !Array.isArray(c.depts) || c.depts.length !== 6) throw new Error('chrome not in /api/mcp: ' + JSON.stringify(c));
+      return `teams on (max ${up.teams.max}) · Chrome ${c.status}${up.browser.device ? ' · ' + up.browser.device : ''} · wired to every pod`;
+    });
     await step('server: rejects an empty task', async () => { const r = await fetch(base + '/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"dept":"sales","text":""}' }); if (r.status !== 400) throw new Error('status ' + r.status); });
     if (LIVE) {
       await step('live: Claude routes a task', async () => {
@@ -410,6 +491,26 @@ else {
         if (d.modelUsed !== 'opus' || d.modelFrom !== 'task' || !/opus/.test(String(d.modelId))) throw new Error(`ran on ${d.modelId} (${d.modelUsed} from ${d.modelFrom})`);
         const u = await (await fetch(base + '/api/usage')).json(); if (!u.ok) throw new Error('usage after a run');
         return `${d.agent} · ${d.modelId} · from the task · gauge ${u.source}`;
+      });
+      await step('live: a team task — the lead plans, the desks work at once, the lead writes the final', async () => {
+        const r = await fetch(base + '/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dept: 'marketing', text: 'as a team, give me three angles for a reel about inbox overload: for each one a hook line and a two-sentence caption', team: true }) });
+        if (!r.ok) throw new Error((await r.json()).error); const t = await r.json();
+        if (!t.team || t.agent !== 'mlead') throw new Error('not a team task for the lead: ' + JSON.stringify({ team: t.team, agent: t.agent }));
+        const d = await (await fetch(`${base}/api/tasks/${t.id}/run`, { method: 'POST' })).json(); if (d.error) throw new Error(d.result);
+        const ps = d.team?.pieces || []; if (ps.length < 2) throw new Error('fewer than two pieces: ' + JSON.stringify(d.team));
+        if (new Set(ps.map(p => p.agent)).size !== ps.length) throw new Error('a desk got two pieces');
+        if (!ps.every(p => p.state === 'done' && p.result)) throw new Error('a piece did not finish: ' + JSON.stringify(ps.map(p => [p.agent, p.state])));
+        if (!/Team:/i.test(d.result)) throw new Error('the final has no Team line');
+        const note = fs.readFileSync(path.join(cfg.brainPath, 'Agents Office', d.note + '.md'), 'utf8'); if (!/^team: /m.test(note) || !/## Team/.test(note)) throw new Error('the note does not carry the team');
+        return `${ps.map(p => p.agent).join(' + ')} → ${d.agent} · ${d.result.length} chars · ${(d.team.messages || []).length} notes between them · ${d.note}.md`;
+      });
+      await step('live: an agent drives the owner\'s Chrome', async () => {
+        const r = await fetch(base + '/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dept: 'ops', text: 'Open https://example.com in the browser and tell me the exact page heading and where its one link points. Then close the tab.' }) });
+        if (!r.ok) throw new Error((await r.json()).error); const t = await r.json();
+        const d = await (await fetch(`${base}/api/tasks/${t.id}/run`, { method: 'POST' })).json(); if (d.error) throw new Error(d.result);
+        if (!(d.tools || []).includes('chrome')) throw new Error('the browser was not used (tools: ' + (d.tools || []).join(' ') + '): ' + d.result.slice(0, 200));
+        if (!/example domain/i.test(d.result)) throw new Error('the heading is not in the result: ' + d.result.slice(0, 200));
+        return `${d.agent} · used ${d.used.join(', ')} · "${d.result.match(/example domain/i)[0]}"`;
       });
       await step('live: chat answers in persona', async () => {
         const r = await fetch(base + '/api/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agent: 'lexi', text: 'what is our proposal win rate?' }) });

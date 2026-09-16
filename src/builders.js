@@ -107,20 +107,21 @@ export function makeDeskScreenTexture(chip) {
   return { tex, canvas: c, ctx: x, draw };
 }
 
-export function makeDesk(chip) {
+export function makeDesk(chip, live) {
   const g = new THREE.Group();
   const top = rbox(5.2, 2.6, 0.22, '#DCC29A', 0.18); top.position.y = 2.1; g.add(top);
   const ped1 = rbox(0.9, 2.2, 1.9, WHITE, 0.12); ped1.position.set(-2.0, 0.1, 0); g.add(ped1);
   const ped2 = rbox(0.9, 2.2, 1.9, WHITE, 0.12); ped2.position.set(2.0, 0.1, 0); g.add(ped2);
-  // monitor
-  const screenSet = makeDeskScreenTexture(chip);
+  // monitor — with a live screen (screens.js) it is a wider 16:10 panel so the session reads from the pod view
+  const screenSet = live ? { tex: live.tex, canvas: live.canvas, draw: () => {}, live } : makeDeskScreenTexture(chip);
+  const [mw, mh] = live ? [3.4, 2.125] : [2.1, 1.3];
   // rbox extrudes UP from its position — bezel base sits just above the desk top
-  const monBack = rbox(2.3, 0.14, 1.5, '#26262A', 0.08); monBack.position.set(0, 2.75, -0.85); g.add(monBack);
+  const monBack = rbox(mw + 0.2, 0.14, mh + 0.2, '#26262A', 0.08); monBack.position.set(0, 2.75, -0.85); g.add(monBack);
   const screen = new THREE.Mesh(
-    new THREE.PlaneGeometry(2.1, 1.3),
+    new THREE.PlaneGeometry(mw, mh),
     new THREE.MeshBasicMaterial({ map: screenSet.tex })
   );
-  screen.position.set(0, 3.5, -0.77); g.add(screen);
+  screen.position.set(0, 2.85 + mh / 2, -0.77); screen.name = 'screen'; monBack.name = 'monBack'; g.add(screen);
   const stand = rbox(0.16, 0.16, 0.45, '#3A3A3E', 0.05); stand.position.set(0, 2.32, -0.9); g.add(stand);
   // keyboard + mug
   const kb = rbox(1.5, 0.5, 0.07, '#EFEFEA', 0.06); kb.position.set(0, 2.22, 0.35); g.add(kb);

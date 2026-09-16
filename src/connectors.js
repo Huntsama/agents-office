@@ -5,7 +5,7 @@ import { MCP_LOGOS } from './mcplogos.js';
 import { DEPT_KEYS } from './data.js';
 
 // brand inks for shared looms (a shared connector is wired to four or more pods)
-const INK = { notion: '#151414', gmail: '#EA4335', slack: '#4A154B', zapier: '#FF4F00', claude_ai_Google_Drive: '#1FA463', googledrive: '#1FA463' };
+const INK = { notion: '#151414', gmail: '#EA4335', slack: '#4A154B', zapier: '#FF4F00', claude_ai_Google_Drive: '#1FA463', googledrive: '#1FA463', chrome: '#4285F4' }; // V3.2 (16 Sep): Chrome is wired to every pod
 const norm = s => String(s).toLowerCase().replace(/^claude\.ai\s+/, '').replace(/[^a-z0-9]/g, '');
 function hue(name) { let h = 0; for (const c of String(name)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % 360; }
 export const inkOf = name => `hsl(${hue(name)} 52% 42%)`;

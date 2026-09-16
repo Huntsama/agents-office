@@ -14,8 +14,15 @@
 // SCHEDULED → BACKLOG → IN PROGRESS → (WAITING ON APPROVAL) → DONE. A draft that needs the owner's
 // OK makes the agent stand and wave; APPROVE sends it, REJECT + a note reworks it. Demo (file://):
 // session-only routines fired by this tick.
+// V3.2 (16 Sep 2026): AGENT TEAMS — TEAM in the bar (or "as a team" in the sentence) sends the task
+// to the department lead, who splits it into pieces; the pieces appear as cards on the teammates'
+// desks (↳), all IN PROGRESS at once, each teammate's finished piece lands in their own chat and
+// walks back to the lead (📋), notes they leave each other pop as 💬, and the lead's card finishes
+// with the combined deliverable. Live: the server does it (serve.mjs runTeam, one Claude process per
+// desk); this page reads `task.team` off /api/tasks. Demo: the same theatre on a timer.
 import { DEPTS, AGENTS, DEPT_KEYS } from './data.js';
 import { P, rnd, ri } from './v1data.js';
+import { applyTasks, PROFILE, titleCase } from './profile.js';
 import { parseWhen, describe, nextRun, fromPicker, untilText } from './when.js';
 import { MODEL_KEYS, MODELS, DEFAULT_MODEL, modelName, normModel, FROM_TEXT , EFFORT_KEYS, EFFORT_NAME, normEffort, effortName, effortFor } from './models.js';
 
@@ -103,6 +110,7 @@ const CHAINS = [
   [['crep', 'September report ready for {co}'], ['cmail', 'Send the {co} report with a summary']],
 ];
 
+applyTasks({ POOL, KEYS, CHAINS, SEGMENTS, AGENTS }); // INDUSTRY PROFILE (12 Sep 2026): per-industry demo file; no-op otherwise
 function fill(s, v) { return s.replace('{co}', v.co).replace('{n}', v.n).replace('{segment}', v.segment); }
 function vars() { return { co: rnd(P.co), n: ri(6, 40), segment: rnd(SEGMENTS) }; }
 function timeStr(ts) {
@@ -132,7 +140,7 @@ export function initTasks(ctx) {
   // V3.5 routines. Live: the server's list (polled). Demo: session-only, fired by this tick.
   const routines = []; let rseq = 1, polling = false, railAgent = null, railExp = false;
   const RT_DEPTS = ['emails', 'fin', 'sales'];
-  const RT_NAMES = { emails: 'Emails', fin: 'Accounting', sales: 'Sales', marketing: 'Marketing', ops: 'Operations', delivery: 'Delivery' };
+  const RT_NAMES = PROFILE ? Object.fromEntries(Object.entries(PROFILE.pods).map(([k, v]) => [k, titleCase(v)])) : { emails: 'Emails', fin: 'Accounting', sales: 'Sales', marketing: 'Marketing', ops: 'Operations', delivery: 'Delivery' };
   const rtRefuse = k => `Routines come to ${RT_NAMES[k] || k} in a later release. This release: Emails, Accounting and Sales.`;
   const deptRoutines = k => routines.filter(r => r.dept === k);
   const agentRoutines = id => routines.filter(r => r.agent === id);
@@ -171,7 +179,7 @@ export function initTasks(ctx) {
   }
   function start(t, now) {
     t.state = 'doing'; t.startedAt = now; t.progress = 0; t.running = !!t.srv; t.ready = false; // a server-run task (routine) is never started from here
-    t.dur = 90000 + Math.random() * 150000; // 1.5–4 min: a few completions a minute across the office
+    t.dur = t.piece ? 40000 + Math.random() * 50000 : 90000 + Math.random() * 150000; // 1.5–4 min: a few completions a minute across the office (a team piece 40–90 s)
     t.pausedAt = null;
     touch(t, 'started');
   }
@@ -187,6 +195,7 @@ export function initTasks(ctx) {
     feedPush(r, '✓', 'Done: ' + t.title);
     if (chatHist[t.agent]) chatPush(t.agent, { who: 'work', i: '✓', text: 'done — ' + t.title });
     if (t.live) deliver(t); // the real deliverable lands in the agent's chat; the server already wrote the note
+    else if (t.piece) { if (R[t.leadId]) { spawnEmote(R[t.leadId], '📋'); feedPush(R[t.leadId], '📋', `Piece in from ${agentOf(t.agent).name}: ${t.title}`); } } // demo: the piece walks back to the lead
     // demo: finished work becomes a note in the Brain — always for tasks you added, a quarter of the rest
     else if (brainWrite && (t.by === 'you' || Math.random() < 0.25)) brainWrite(t.agent, t.title);
     touch(t, 'done');
@@ -201,9 +210,17 @@ export function initTasks(ctx) {
   }
   function deliver(t) {
     const a = agentOf(t.agent);
+    if (t.piece) { // V3.2 (16 Sep): a teammate's piece — in their own chat, then it walks back to the lead
+      const L = agentOf(t.leadId), parent = tasks.find(x => x.id === t.parent);
+      chatPush(t.agent, { who: 'file', icon: t.error ? '⚠' : '📄', name: slug(t.title) + '.md', meta: `my piece · passed to ${L ? L.name : 'the lead'} · ${timeStr(t.doneAt)} · click to view`, content: t.result });
+      if (!t.error) chatPush(t.agent, { who: 'agent', text: `My piece of "${parent ? parent.title : t.title}" is done and with ${L ? L.name : 'the lead'}${t.used && t.used.length ? `. Used ${t.used.join(', ')}` : ''}.` });
+      feedPush(R[t.agent], '📄', `Piece done → ${L ? L.name : 'lead'}: ${t.title}`);
+      if (L && R[L.id]) { spawnEmote(R[L.id], '📋'); feedPush(R[L.id], '📋', `Piece in from ${a.name}: ${t.title}`); }
+      return;
+    }
     chatPush(t.agent, { who: 'file', icon: t.error ? '⚠' : '📄', name: (t.note || slug(t.title)) + '.md',
       meta: `${t.error ? 'could not complete' : t.approved ? 'sent after your OK · saved to your brain' : 'delivered · saved to your brain'} · ${timeStr(t.doneAt)} · click to view`, content: t.result });
-    if (!t.error) chatPush(t.agent, { who: 'agent', text: `Done — "${t.title}"${t.routine ? ` (routine, ${t.when}${t.late ? ', ran late' : ''})` : ''} is ready above${t.read && t.read.length ? ` (I read ${t.read.slice(0, 3).join(', ')})` : ''}${t.used && t.used.length ? `. Used ${t.used.join(', ')}` : ''}. Say "revise: …" and I'll change it.` });
+    if (!t.error) chatPush(t.agent, { who: 'agent', text: `Done — "${t.title}"${t.routine ? ` (routine, ${t.when}${t.late ? ', ran late' : ''})` : ''} is ready above${t.team?.members?.length ? ` — the team was ${membersText(t)} and me` : ''}${t.read && t.read.length ? ` (I read ${t.read.slice(0, 3).join(', ')})` : ''}${t.used && t.used.length ? `. Used ${t.used.join(', ')}` : ''}. Say "revise: …" and I'll change it.` });
     feedPush(R[t.agent], '📄', `Delivered: ${t.title}`);
     if (brain && t.read) for (const n of t.read.slice(0, 2)) brain.readNote(t.agent, n);
   }
@@ -275,7 +292,7 @@ export function initTasks(ctx) {
     scope: panel.querySelector('.tp-scope'),
     rep: panel.querySelector('.tp-rep'), repRow: panel.querySelector('.tp-rep-row'), cad: panel.querySelector('.tp-cad'), at: panel.querySelector('.tp-at'), okc: panel.querySelector('.tp-okc'), next: panel.querySelector('.tp-next'),
     model: panel.querySelector('.tp-model'), effort: panel.querySelector('.tp-effort'),
-    bigBtn: panel.querySelector('.tp-big-btn'),
+    bigBtn: panel.querySelector('.tp-big-btn'), team: panel.querySelector('.tp-team'),
   };
   // V3.7: the box grows with the text (one line at rest, six at most) and the big editor mirrors it
   const big = document.getElementById('tpBig');
@@ -317,6 +334,15 @@ export function initTasks(ctx) {
   P_.at.addEventListener('change', updateHint);
   [P_.cad, P_.at, P_.okc].forEach(el => el.addEventListener('keydown', e => e.stopPropagation()));
   const routineIntent = text => repeat ? { when: fromPicker(P_.cad.value, P_.at.value), text, picker: true } : parseWhen(text);
+  // V3.2 (16 Sep) Agent Teams: the TEAM toggle — the department lead splits the task across its desks, they work at once, the lead writes the final
+  let teamOn = false, teamsCfg = { enabled: true, max: 4 };
+  const teamIntent = text => /\b(as a team|team up|team this|get the (whole )?team|the (whole )?team (on|to|should|can)|with the team|(spawn|use|get) (\d+|two|three|four|five|a few|some) teammates?|\d+ teammates|split (it|this|the work) (up|across|between)|teammates|team:|whole department)\b/i.test(text);
+  const asTeam = text => teamsCfg.enabled && (teamOn || teamIntent(text));
+  const leadOf = k => AGENTS.find(x => x.dept === k && x.lead) || AGENTS.filter(x => x.dept === k)[0];
+  P_.team.addEventListener('click', () => { teamOn = !teamOn; P_.team.classList.toggle('on', teamOn); updateHint(); if (teamOn) P_.input.focus(); });
+  function resetTeam() { teamOn = false; P_.team.classList.remove('on'); }
+  const teamBit = t => t.team?.members?.length ? ` · <span class="tp-team-chip">TEAM ${t.team.members.length + 1}</span>` : t.piece ? ' · <span class="tp-team-chip">PIECE</span>' : '';
+  const membersText = t => (t.team?.members || []).map(id => agentOf(id)?.name || id).join(', ');
   let dept = 'marketing', filter = 'all';
   P_.menu.innerHTML = DEPT_KEYS.map(k => `<button data-k="${k}"><span class="dot" style="background:${DEPTS[k].chip}"></span>${DEPTS[k].name}</button>`).join('');
   P_.menu.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { setDept(b.dataset.k); P_.menu.classList.remove('on'); P_.input.focus(); }));
@@ -355,6 +381,11 @@ export function initTasks(ctx) {
       P_.hint.innerHTML += pickBit('routine');
       P_.hint.className = 'tp-hint on'; return;
     }
+    if (asTeam(text)) { // a team in the making: the lead, and how many desks
+      const L = leadOf(dept), chip = DEPTS[dept].chip;
+      P_.hint.innerHTML = `<span class="tp-av" style="border-color:${chip};background:${chip}55">⚑</span>Team · <b>${L.name}</b> splits it across up to ${teamsCfg.max} desks, they work at the same time, the lead writes the final` + pickBit('task');
+      P_.hint.className = 'tp-hint on'; return;
+    }
     const { agent: a, matched } = route(dept, text);
     const busy = agentTasks(a.id, 'doing').length > 0 || R[a.id].state === 'stuck';
     const chip = DEPTS[a.dept].chip;
@@ -390,22 +421,31 @@ export function initTasks(ctx) {
     if (live) {
       const text = title, k = dept;
       P_.input.value = ''; P_.input.disabled = true; P_.add.disabled = true;
-      say(`Routing through Claude — ${DEPTS[k].name.toLowerCase()} is reading it…`, 'busy');
+      const team = asTeam(text);
+      say(team ? `Routing through Claude — <b>${leadOf(k).name}</b> is reading it for the team…` : `Routing through Claude — ${DEPTS[k].name.toLowerCase()} is reading it…`, 'busy');
       try {
         const mdl = chosenModel();
-        const r = await fetch(API + '/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dept: k, text, model: mdl || undefined, effort: effortSend() }) });
+        const r = await fetch(API + '/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dept: k, text, model: mdl || undefined, effort: effortSend(), team: team || undefined }) });
         if (!r.ok) throw new Error((await r.json()).error || r.statusText);
         const st = await r.json();
-        const t = mk({ agent: st.agent, title: st.title, text: st.text, plan: st.plan, why: st.why, by: 'you', live: true, sid: st.id, model: st.model, modelUsed: st.model || officeModel, modelFrom: st.model ? 'task' : 'office', effort: st.effort });
-        resetModel();
-        touch(t, 'added'); spawnEmote(R[t.agent], '📋');
-        say(`Added — <b>${agentOf(t.agent).name}</b> has it${st.why ? ' · ' + esc(st.why) : ''}`);
+        const t = mk({ agent: st.agent, title: st.title, text: st.text, plan: st.plan, why: st.why, by: 'you', live: true, sid: st.id, model: st.model, modelUsed: st.model || officeModel, modelFrom: st.model ? 'task' : 'office', effort: st.effort,
+          team: st.team ? { lead: st.team.lead, members: [] } : undefined });
+        resetModel(); resetTeam();
+        touch(t, 'added'); spawnEmote(R[t.agent], st.team ? '⚑' : '📋');
+        say(st.team ? `Added — <b>${agentOf(t.agent).name}</b> has it and is splitting it across the team` : `Added — <b>${agentOf(t.agent).name}</b> has it${st.why ? ' · ' + esc(st.why) : ''}`);
         setTimeout(() => { if (!P_.input.value) P_.hint.classList.remove('on'); }, 7000);
       } catch (e) {
         say(`Claude couldn't take it (${esc(e.message)}). Kept it on the board.`, 'err');
         const { agent: a } = route(k, text); addTask(a.id, text, 'you');
       }
       P_.input.disabled = false; P_.add.disabled = false; P_.input.blur(); // hand the keys back to the office
+      return;
+    }
+    if (asTeam(title)) { // demo: the lead + two or three desks, all at once, the lead finishes when the pieces are in
+      const t = addTeamDemo(dept, title);
+      const mdl = chosenModel(); t.modelUsed = mdl || officeModel; t.modelFrom = mdl ? 'task' : 'office'; const ef = effortUsedFor(t.modelUsed); t.effortUsed = ef.effort || ''; t.effortFrom = ef.from;
+      resetModel(); resetTeam(); P_.input.value = ''; updateHint();
+      say(`Added — <b>${agentOf(t.agent).name}</b> has it with ${esc(membersText(t))}.`); setTimeout(updateHint, 3200); P_.input.blur();
       return;
     }
     const { agent: a } = route(dept, title);
@@ -415,6 +455,18 @@ export function initTasks(ctx) {
     P_.input.value = ''; updateHint();
     if (t) { say(`Added — <b>${a.name}</b> has it.`); setTimeout(updateHint, 2600); P_.input.blur(); }
     else say(`<b>${a.name}</b> already has five queued — let one finish first.`);
+  }
+  /* ---------- V3.2 (16 Sep) demo teams: the same moves on a timer ---------- */
+  function addTeamDemo(k, title) {
+    const L = leadOf(k), others = AGENTS.filter(x => x.dept === k && !x.lead).sort(() => Math.random() - 0.5);
+    const picks = others.slice(0, Math.max(2, Math.min(3, teamsCfg.max - 1, others.length)));
+    const t = mk({ agent: L.id, title, by: 'you', team: { lead: L.id, members: picks.map(p => p.id) }, teamHold: true });
+    touch(t, 'added'); spawnEmote(R[L.id], '⚑'); feedPush(R[L.id], '⚑', `Team task: ${title} — ${picks.map(p => agentOf(p.id).name).join(', ')}`);
+    for (const p of picks) {
+      const c = mk({ agent: p.id, title: `${title} — ${(p.role || 'their').replace(/ Agent$/i, '').toLowerCase()} part`, by: 'team', piece: true, parent: t.id, leadId: L.id, from: L.id });
+      touch(c, 'handoff'); spawnEmote(R[p.id], '📋'); feedPush(R[p.id], '📋', `Team piece from ${L.name}: ${c.title}`);
+    }
+    return t;
   }
   /* ---------- V3.5 routines: set one from the bar ---------- */
   async function submitRoutine(rt, raw) {
@@ -522,7 +574,38 @@ export function initTasks(ctx) {
     apply(t, st);
   }
   function copyResult(t, st) { t.result = st.result; t.error = !!st.error; t.read = st.read || []; t.note = st.note; t.tools = st.tools || []; t.used = st.used || []; t.draft = st.draft; t.approved = !!st.approved; if (st.modelUsed) { t.modelUsed = st.modelUsed; t.modelFrom = st.modelFrom; t.effortUsed = st.effortUsed || ''; t.effortFrom = st.effortFrom; } }
+  // V3.2 (16 Sep): the server's team state → piece cards on the teammates' desks, notes as 💬, the lead's members list
+  const seenNotes = new Set();
+  function syncTeam(t, st, quiet) {
+    const tm = st.team; if (!tm) return;
+    const pieces = tm.pieces || [];
+    t.team = { lead: tm.lead, members: pieces.map(p => p.agent).filter(id => id !== tm.lead), why: tm.why };
+    for (const p of pieces) {
+      if (!agentOf(p.agent)) continue;
+      const sid = `${st.id}:${p.agent}`;
+      let c = tasks.find(x => x.live && x.sid === sid);
+      if (!c) {
+        c = mk({ agent: p.agent, title: p.title, text: p.text, by: 'team', live: true, srv: true, sid, piece: true, parent: t.id, leadId: tm.lead, from: tm.lead, addedAt: tm.plannedAt || Date.now(), changedAt: tm.plannedAt || Date.now(), last: 'handoff', running: true });
+        if (!quiet) { spawnEmote(R[p.agent], '📋'); feedPush(R[p.agent], '📋', `Team piece from ${agentOf(tm.lead).name}: ${p.title}`); }
+        touch(c, 'handoff');
+      }
+      if (p.state === 'doing' && c.state !== 'doing') { c.state = 'doing'; c.startedAt = performance.now() - Math.max(0, Date.now() - (p.startedAt || Date.now())); c.progress = 0; c.running = true; c.ready = false; c.changedAt = p.startedAt || Date.now(); touch(c, 'started'); }
+      else if (p.state === 'done' && c.state !== 'done') {
+        c.result = p.result; c.error = !!p.error; c.tools = p.tools || []; c.used = p.used || []; c.read = p.read || []; c.ready = true; c.running = true;
+        if (quiet) { c.state = 'done'; c.doneAt = p.doneAt || Date.now(); c.changedAt = c.doneAt; c.progress = 1; c.last = 'done'; }
+        else { complete(c); c.doneAt = p.doneAt || c.doneAt; c.changedAt = c.doneAt; if (c.tools.length && onTools) onTools(c.agent, c.tools); }
+      }
+    }
+    for (const m of tm.messages || []) { // a note one teammate left another (or the lead)
+      const key = `${st.id}:${m.from}:${m.to}:${m.at}`; if (seenNotes.has(key)) continue; seenNotes.add(key);
+      if (quiet) continue;
+      const to = m.to === 'lead' ? tm.lead : m.to, toName = agentOf(to)?.name || m.to;
+      if (R[m.from]) { spawnEmote(R[m.from], '💬'); feedPush(R[m.from], '💬', `Note to ${toName}: ${m.text}`); chatPush(m.from, { who: 'work', i: '💬', text: `note to ${toName}: ${m.text}` }); }
+      if (R[to]) { feedPush(R[to], '📨', `Note from ${agentOf(m.from)?.name || m.from}: ${m.text}`); chatPush(to, { who: 'work', i: '📨', text: `note from ${agentOf(m.from)?.name || m.from}: ${m.text}` }); }
+    }
+  }
   function apply(t, st) {
+    if (st.team) syncTeam(t, st);
     if (st.state === 'doing' && t.state !== 'doing') {
       t.state = 'doing'; t.startedAt = performance.now() - Math.max(0, Date.now() - (st.startedAt || Date.now())); t.progress = 0; t.pausedAt = null; t.running = true; t.ready = false; t.srv = true; t.changedAt = st.startedAt || Date.now(); touch(t, 'started');
     } else if (st.state === 'waiting' && t.draftAt !== st.waitingAt) { // a new draft is waiting for the OK (the first, or a rework after REJECT)
@@ -583,6 +666,7 @@ export function initTasks(ctx) {
       const h = await (await fetch(API + '/health')).json();
       if (!h.ok) return;
       live = true; setOfficeModel(h.model); setOfficeEffort(h.effort);
+      if (h.teams) { teamsCfg = { enabled: h.teams.enabled !== false, max: h.teams.max || 4 }; P_.team.hidden = !teamsCfg.enabled; }
       const mode = panel.querySelector('.tp-mode');
       if (mode) { mode.hidden = false; mode.textContent = 'LIVE · ' + (h.backend === 'anthropic-sdk' ? 'CLAUDE API' : 'CLAUDE'); mode.classList.add('live'); mode.title = `${h.name} · ${h.backend} · ${modelName(h.model)} by default · brain: ${h.brain}`; }
       if (brain) { try { brain.setGraph(await (await fetch(API + '/brain')).json()); } catch {} }
@@ -592,6 +676,7 @@ export function initTasks(ctx) {
         if (st.state === 'done') {
           const t = mk({ agent: st.agent, title: st.title, text: st.text, plan: st.plan, by: 'you', live: true, sid: st.id, state: 'done',
             doneAt: st.doneAt, changedAt: st.doneAt, addedAt: st.addedAt, result: st.result, read: st.read, note: st.note, tools: st.tools || [], used: st.used || [], error: !!st.error, last: 'done' });
+          if (st.team) syncTeam(t, st, true);
           deliver(t);
         } else reconcile(st); // next, doing (the server may be running it), waiting for your OK — pick it up again
       }
@@ -627,13 +712,13 @@ export function initTasks(ctx) {
     const who = (f && f !== 'brain') ? a.name : `${a.name} · ${DEPTS[t.dept].short}`;
     switch (t.state) {
       case 'next': {
-        const src = t.routine ? `routine · ${t.when}${t.late ? ' · <span class="tp-late">late · was due ' + timeStr(t.due) + '</span>' : ''}` : t.by === 'you' ? (t.live ? 'added by you · live' : 'added by you') : t.last === 'handoff' && t.from ? `from ${agentOf(t.from).name}` : t.revised ? 'sent back to revise' : 'from the Brain';
+        const src = t.piece ? `team piece from ${agentOf(t.leadId)?.name || 'the lead'}` : t.routine ? `routine · ${t.when}${t.late ? ' · <span class="tp-late">late · was due ' + timeStr(t.due) + '</span>' : ''}` : t.by === 'you' ? (t.live ? 'added by you · live' : 'added by you') : t.last === 'handoff' && t.from ? `from ${agentOf(t.from).name}` : t.revised ? 'sent back to revise' : 'from the Brain';
         const w = now - t.addedAt;
-        return `${who} · ${w < 60000 ? 'just added' : 'waiting ' + span(w)} · ${src}${modelBit(t)}`;
+        return `${who} · ${w < 60000 ? 'just added' : 'waiting ' + span(w)} · ${src}${teamBit(t)}${modelBit(t)}`;
       }
-      case 'doing': return `${who}${t.live ? (t.approved === undefined && t.draftAt ? ' · sending with Claude' : ' · working with Claude') : t.agent === 'vid' ? ' · rendering' : ''}${t.routine ? ' · routine' : ''}${modelBit(t)}`;
-      case 'waiting': return `<span class="tp-amber">waiting ${span(now - t.changedAt)} for your tick</span> · ${who}${t.routine ? ' · routine draft' : ''}${modelBit(t)}`;
-      case 'done': return `${who} · done ${timeStr(t.doneAt)}${t.approved ? (t.live ? ' · sent after your OK' : ' · approved') : ''}${t.late ? ' · <span class="tp-late">ran late</span>' : ''}${modelBit(t)}${t.live ? (t.error ? ' · <span class="tp-amber">failed</span>' : ' · <span class="tp-res">result ready →</span>') : ''}`;
+      case 'doing': return `${who}${t.live ? (t.approved === undefined && t.draftAt ? ' · sending with Claude' : t.team?.members?.length ? ' · leading the team with Claude' : ' · working with Claude') : t.agent === 'vid' ? ' · rendering' : t.teamHold ? ' · waiting on the pieces' : ''}${t.routine ? ' · routine' : ''}${teamBit(t)}${modelBit(t)}`;
+      case 'waiting': return `<span class="tp-amber">waiting ${span(now - t.changedAt)} for your tick</span> · ${who}${t.routine ? ' · routine draft' : ''}${teamBit(t)}${modelBit(t)}`;
+      case 'done': return `${who} · done ${timeStr(t.doneAt)}${t.approved ? (t.live ? ' · sent after your OK' : ' · approved') : ''}${t.late ? ' · <span class="tp-late">ran late</span>' : ''}${teamBit(t)}${modelBit(t)}${t.live ? (t.error ? ' · <span class="tp-amber">failed</span>' : ' · <span class="tp-res">result ready →</span>') : ''}`;
     }
     return who;
   }
@@ -641,8 +726,8 @@ export function initTasks(ctx) {
     const pct = Math.round(t.progress * 100);
     const chip = `<span class="tp-st ${t.state}">${t.state === 'doing' ? `<span data-pct="${t.id}">${pct}%</span>` : STATE_LABEL[t.state]}</span>`;
     const bar = t.state === 'doing' ? `<div class="tp-bar"><i data-bar="${t.id}" style="width:${pct}%"></i></div>` : '';
-    return `<div class="tp-row ${t.state}${t.last === 'handoff' ? ' handoff' : ''}${t.live ? ' live' : ''}" data-id="${t.id}" data-dept="${t.dept}" data-agent="${t.agent}">
-      ${chip}<div class="tp-body"><div class="tp-t">${t.routine ? '⏱ ' : ''}${esc(t.title)}</div><div class="tp-m">${metaFor(t)}</div>${bar}</div>
+    return `<div class="tp-row ${t.state}${t.last === 'handoff' ? ' handoff' : ''}${t.live ? ' live' : ''}${t.piece ? ' piece' : ''}" data-id="${t.id}" data-dept="${t.dept}" data-agent="${t.agent}">
+      ${chip}<div class="tp-body"><div class="tp-t">${t.routine ? '⏱ ' : ''}${t.team?.members?.length ? '⚑ ' : ''}${esc(t.title)}</div><div class="tp-m">${metaFor(t)}</div>${bar}</div>
       <span class="tp-ago" data-ago="${t.id}">${span(Date.now() - t.changedAt)}</span></div>`;
   }
   function rowHTMLr(r) { // a SCHEDULED row: the routine itself, with its countdown and its buttons
@@ -732,7 +817,7 @@ export function initTasks(ctx) {
     else if (t.state === 'doing') meta = `${av}<span>${a.name}</span><span class="tk-pct" data-pct="${t.id}">${t.agent === 'vid' ? 'RENDER · ' : ''}${pct}%</span>`;
     else meta = `${av}<span>${a.name}</span><span class="tk-pct">${span(Date.now() - t.addedAt).toUpperCase()} IN BACKLOG</span>`;
     return `<div class="tk ${t.state}${t.revised ? ' rev' : ''}" data-id="${t.id}" data-dept="${t.dept}">
-      <div class="tk-t">${t.routine ? '⏱ ' : ''}${esc(t.title)}</div><div class="tk-m">${meta}</div>
+      <div class="tk-t">${t.routine ? '⏱ ' : ''}${t.team?.members?.length ? '⚑ ' : t.piece ? '↳ ' : ''}${esc(t.title)}</div><div class="tk-m">${meta}</div>
       ${t.state === 'doing' ? `<div class="tk-bar"><i data-bar="${t.id}" style="width:${pct}%"></i></div>` : ''}</div>`;
   }
   const byState = (k, st) => {
@@ -849,12 +934,16 @@ export function initTasks(ctx) {
       const r = R[id];
       if (r.state === 'stuck') continue;
       const d = agentTasks(id, 'doing')[0];
-      if (d && live && !d.live && agentTasks(id, 'next').some(t => t.live)) { d.progress = 1; complete(d); continue; } // live: real work never waits behind theatre
+      if (d && !d.live && agentTasks(id, 'next').some(t => t.live || t.piece)) { d.progress = 1; complete(d); continue; } // real work (and a team piece) never waits behind theatre
       if (d) {
         if (d.live) {
           if (!d.running) runLive(d);
           if (d.ready) { d.progress = 1; complete(d); }
           else d.progress = Math.min(0.92, (now - (d.startedAt || now)) / 45000);
+        } else if (d.teamHold) { // demo lead: the card fills as the pieces come in, finishes when the last one lands
+          const ps = tasks.filter(x => x.parent === d.id);
+          d.progress = ps.length ? Math.min(0.96, ps.reduce((s, p) => s + (p.state === 'done' ? 1 : p.progress || 0), 0) / ps.length) : Math.min(0.5, (now - d.startedAt) / d.dur);
+          if (ps.length && ps.every(p => p.state === 'done')) { d.progress = 1; complete(d); }
         } else {
           d.progress = Math.min(1, (now - d.startedAt) / d.dur);
           if (d.progress >= 1) complete(d);

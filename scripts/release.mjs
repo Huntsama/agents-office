@@ -22,7 +22,7 @@ const OUT = path.join(ROOT, 'dist', 'release');
 
 const FILES = ['src', 'assets/mcp/tiles', 'assets/mcp/bake.py', 'assets/mcp/rebake.py', 'brain', 'scripts/release.mjs',
   'build.mjs', 'graph-build.mjs', 'serve.mjs', 'config.mjs', 'mcp.mjs', 'roster.mjs', 'check.mjs', 'setup', 'package.json', 'package-lock.json',
-  'office.config.json', 'office.agents.json', 'skills.mjs', 'skills', 'learn.mjs', 'onboard.mjs', 'routines.mjs', 'usage.mjs', 'CLAUDE.md', 'README.md', 'SKILLS.md', 'CHANGELOG.md', 'LICENSE', 'assets/readme-hero.jpg'];
+  'office.config.json', 'office.agents.json', 'skills.mjs', 'skills', 'learn.mjs', 'onboard.mjs', 'routines.mjs', 'usage.mjs', 'teams.mjs', 'CLAUDE.md', 'README.md', 'SKILLS.md', 'CHANGELOG.md', 'LICENSE', 'assets/readme-hero.jpg'];
 
 const run = (cmd, args, opts = {}) => { const r = spawnSync(cmd, args, { stdio: 'pipe', encoding: 'utf8', ...opts }); if (r.status !== 0) throw new Error(`${cmd} ${args.join(' ')}: ${(r.stderr || r.stdout).trim()}`); return r.stdout; };
 
@@ -40,6 +40,7 @@ fs.mkdirSync(path.join(OUT, 'dist'), { recursive: true }); fs.copyFileSync(path.
 // the shipped braingraph.js must come from the sample brain — guard against a private vault leaking
 const bg = fs.readFileSync(path.join(OUT, 'src', 'braingraph.js'), 'utf8');
 if (!/MOC-Sales/.test(bg) || /sahni|territool/i.test(bg)) throw new Error('braingraph.js does not look like the sample brain — refusing to release');
+for (const m of fs.readFileSync(path.join(ROOT, 'serve.mjs'), 'utf8').matchAll(/from '\.\/([\w-]+\.mjs)'/g)) if (!fs.existsSync(path.join(OUT, m[1]))) throw new Error(`serve.mjs imports ${m[1]} but it is not in the release whitelist — add it to FILES`); // beta.2 of 3.2 shipped without teams.mjs
 console.log('  files:', fs.readdirSync(OUT).join(' '));
 
 if (!push) { console.log(`✓ Release assembled in ${path.relative(ROOT, OUT)}. Add --push to publish ${BRANCH} + ${TAG}.`); process.exit(0); }

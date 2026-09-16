@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.2.0-beta.3 — 16 Sep 2026
+
+- beta.2 shipped without `teams.mjs` (the release whitelist had not been told about it) and would not start; beta.3 is the same release with the file in, and the release script now refuses to assemble a build whose `serve.mjs` imports a file it is not shipping.
+
 ## 3.2.0-beta.2 — 16 Sep 2026
 
 *Numbering: AJ's call, 16 Sep. This is a new release (Agent Teams + Claude in Chrome), not a patch of the 7 Sep 3.2.0-beta.1 (skills); the tag had to be free, and the 3.3–3.6.1 tags stay where they are.*

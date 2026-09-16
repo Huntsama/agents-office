@@ -17,6 +17,19 @@ or build a paid product on it. (Formal terms: PolyForm Noncommercial 1.0.0 — s
 The page carries the Sahni.ai mark at the bottom-left and a licence line along the bottom; the licence asks
 that notices stay, so leave them in place.
 
+## Latest updates
+
+![The calendar — tasks and routines on their days, a routine being scheduled from a date](assets/readme-calendar.jpg)
+
+- **The calendar (P)** — 17 Sep 2026 · Everything on the day it belongs to: finished tasks, today's work, tasks you have scheduled, and every routine projected forward. Click any day to schedule a task for it, or switch on REPEAT to start a routine from that date. A rail lists the routines themselves. Month and week, dark mode too. → [The calendar](#the-calendar-everything-on-the-day-it-belongs-to)
+- **Agent Teams** — 16 Sep · Press TEAM or say "as a team": the department lead splits the job across its desks, they work at the same time, leave notes for each other, and the lead writes the final. → [Agent Teams](#agent-teams-the-lead-splits-it-across-the-desks)
+- **Claude in Chrome** — 16 Sep · The agents can use your own browser for any site you are signed in to, under the same read-freely, act-only-when-asked rule. → [Claude in Chrome](#claude-in-chrome-the-agents-can-use-your-browser)
+- **Models by name, effort, and the usage gauge** — 9 Sep · Sonnet, Opus or Fable per task, routine, agent or office; an effort menu; your plan's session and week in the top bar. → [Which model](#which-model-and-how-much-of-your-plan)
+- **Routines** — 9 Sep · Tasks on the office's own clock, with "needs my OK" before anything goes out. → [Routines](#routines-the-office-runs-on-its-own-clock)
+- **The lead interviews you, and the agents learn from corrections** — 7 Sep · Say "set up" to a department lead; every `revise: …` becomes a standing rule. → [Teach the agents](#teach-the-agents-how-you-work)
+
+The full list, release by release: [CHANGELOG](CHANGELOG.md).
+
 ## What you need
 
 - macOS or Linux (Windows: works with `npm` commands directly, `./setup` is Bash only)

@@ -7,3 +7,4 @@ office.agents.local.json
 brain/Agents Office/
 .DS_Store
 *.backup-*
+.env

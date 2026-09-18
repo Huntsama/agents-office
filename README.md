@@ -35,7 +35,7 @@ The full list, release by release: [CHANGELOG](CHANGELOG.md).
 - macOS or Linux (Windows: works with `npm` commands directly, `./setup` is Bash only)
 - Node.js 20+ — https://nodejs.org
 - git
-- **Claude Code**, logged in with your Claude account, or an `ANTHROPIC_API_KEY`
+- **Claude Code**, logged in with your Claude account, or an `ANTHROPIC_API_KEY`, or a `GEMINI_API_KEY` (Google AI Studio)
 
 ## Install
 
@@ -92,7 +92,7 @@ agents' hands (`"deny": ["Chrome"]` works the same for the browser). `department
 a server is wired to (known brands have a default; anything else feeds every pod). Set `tools.web`
 to `false` to keep the agents off the web, `tools.browser` to `false` to keep them out of your
 Chrome (see [Claude in Chrome](#claude-in-chrome-the-agents-can-use-your-browser)).
-Tool use needs the Claude Code login; on an `ANTHROPIC_API_KEY` the agents write from your notes only.
+Tool use needs the Claude Code login; on an `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` the agents write from your notes only.
 
 ## Make the agents yours
 

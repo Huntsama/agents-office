@@ -50,7 +50,7 @@ import * as onboard from './onboard.mjs';
 import * as routines from './routines.mjs';
 import * as usage from './usage.mjs';
 import * as teams from './teams.mjs';
-import { normModel, modelFor, modelArgs, modelId, modelName, MODEL_KEYS, DEFAULT_MODEL, normEffort, effortFor, effortName, EFFORT_KEYS } from './src/models.js';
+import { normModel, modelFor, modelArgs, modelId, geminiId, modelName, MODEL_KEYS, DEFAULT_MODEL, normEffort, effortFor, effortName, EFFORT_KEYS } from './src/models.js';
 import { parseWhen, describe, valid as validWhen, untilText } from './src/when.js';
 
 const cfg = loadConfig();
@@ -83,7 +83,13 @@ const leadOf = dept => AGENTS.find(a => a.department === dept && a.lead) || AGEN
 const setupMap = () => Object.fromEntries(DEPT_KEYS.map(k => [k, onboard.isSetUp(AGENTS, skills, k)]));
 
 let backend = 'claude-cli', sdk = null;
-if (process.env.ANTHROPIC_API_KEY) {
+// Gemini backend: set GEMINI_API_KEY (or GOOGLE_API_KEY) instead of ANTHROPIC_API_KEY. Uses Gemini's
+// OpenAI-compatible endpoint over plain fetch — no SDK, no Claude login. Like the Anthropic-SDK path
+// it is text only: no MCP tools, no browser. Those still need the Claude Code CLI.
+const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
+const GEMINI_URL = process.env.AO_GEMINI_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+if (GEMINI_KEY) backend = 'gemini';
+else if (process.env.ANTHROPIC_API_KEY) {
   try {
     const { default: Anthropic } = await import('@anthropic-ai/sdk');
     sdk = new Anthropic(); backend = 'anthropic-sdk';
@@ -99,7 +105,7 @@ const USTATE = usage.loadState(DATA);
 let usageCache = { at: 0, value: null, stale: true };
 async function getUsage(force) {
   if (!force && !usageCache.stale && usageCache.value && Date.now() - usageCache.at < 60000) return usageCache.value;
-  const u = await usage.fetchUsage();
+  const u = backend === 'gemini' ? { ok: false, reason: 'Gemini backend — no Claude subscription to read' } : await usage.fetchUsage();
   const v = u.ok ? { ...u, office: usage.fallback(USTATE).window } : { ...usage.fallback(USTATE), reason: u.reason };
   usageCache = { at: Date.now(), value: v, stale: false };
   return v;
@@ -119,6 +125,19 @@ function ranOn(mu, want) {
   return keys.find(k => k.includes(fam)) || keys.filter(k => !/haiku/.test(k)).sort((a, b) => (mu[b].outputTokens || 0) - (mu[a].outputTokens || 0))[0] || keys[0];
 }
 async function askX(system, user, { maxTokens = 4000, tools = true, timeout = RUN_TIMEOUT, model = cfg.model, effort = null } = {}) { // model: sonnet · opus · fable · effort: low…max or null = the model's own (src/models.js)
+  if (backend === 'gemini') {
+    const r = await fetch(GEMINI_URL, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + GEMINI_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: geminiId(model), max_tokens: maxTokens, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] }),
+      signal: AbortSignal.timeout(timeout),
+    }).catch(e => { throw new Error(e.name === 'TimeoutError' ? `Gemini took longer than ${timeout / 1000} s` : e.message); });
+    if (!r.ok) throw new Error(`Gemini answered ${r.status}: ${(await r.text()).slice(0, 300)}`);
+    const j = await r.json();
+    const u = j.usage ? { input_tokens: j.usage.prompt_tokens || 0, output_tokens: j.usage.completion_tokens || 0 } : null;
+    bumpUsage(u);
+    return { text: String(j.choices?.[0]?.message?.content || '').trim(), tools: [], usage: u, modelId: j.model || geminiId(model) };
+  }
   if (sdk) {
     const res = await sdk.messages.create({ model: modelId(model), max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] });
     if (res.stop_reason === 'refusal') throw new Error('Claude declined this request');

@@ -62,73 +62,79 @@
       "id": "lexi",
       "department": "sales",
       "lead": true,
-      "name": "SALES LEAD",
-      "role": "Sales Team Lead Agent",
-      "does": "Runs the sales team — five agents report to it — and it owns the reps’ call lists.",
+      "name": "BC AI ORCHESTRATOR",
+      "role": "Master Orchestrator",
+      "does": "Runs the BC AI engine: takes a master order (\"20 dental clinics in Casablanca\"), drives the 360° pipeline across the pod, and reports what came back. Autopilot runs through this desk too.",
       "tools": [
         "notion",
         "gmail"
-      ]
+      ],
+      "brief": "You are a desk in the BC AI engine (Business Clever LLC). Your work is done by the BC AI backend and shown here — report on it plainly, in the owner's language. Nothing you write goes to a prospect until the owner ticks it."
     },
     {
       "id": "enzo",
       "department": "sales",
       "lead": false,
       "name": "LEAD ENRICHER",
-      "role": "Prospect Enrichment Agent",
-      "does": "Enriches every signup via FullEnrich — role, company size, mobile, LinkedIn.",
+      "role": "Enrichment & Memory Agent",
+      "does": "Adds what Maps does not carry: the decision-maker's LinkedIn, the Instagram/Meta presence, and the history BC AI already holds on this prospect.",
       "tools": [
         "fullenrich"
-      ]
+      ],
+      "brief": "You are a desk in the BC AI engine (Business Clever LLC). Your work is done by the BC AI backend and shown here — report on it plainly, in the owner's language. Nothing you write goes to a prospect until the owner ticks it."
     },
     {
       "id": "ilm",
       "department": "sales",
       "lead": false,
-      "name": "INBOUND LEADS MANAGER",
-      "role": "Inbound Leads Manager",
-      "does": "Owns every lead that comes to us — qualifies it within the hour, routes the hot ones to a rep, books the calls.",
+      "name": "WHATSAPP CLOSER",
+      "role": "Closing Agent",
+      "does": "Holds every finished pitch until you tick it, sends it on WhatsApp, then runs the conversation through to a payment-ready client.",
       "tools": [
         "gmail",
         "imessage",
         "fullenrich"
-      ]
+      ],
+      "brief": "You are a desk in the BC AI engine (Business Clever LLC). Your work is done by the BC AI backend and shown here — report on it plainly, in the owner's language. Nothing you write goes to a prospect until the owner ticks it."
     },
     {
       "id": "pros",
       "department": "sales",
       "lead": false,
-      "name": "PROSPECTOR",
-      "role": "Outbound Prospecting Agent",
-      "does": "Builds fresh outbound lead lists to ICP spec — verified before anyone dials.",
+      "name": "MAPS MINER",
+      "role": "Google Maps Prospecting Agent",
+      "does": "Scrapes live businesses off Google Maps for a niche and a city — real direct phone numbers, ratings, review counts — and filters them to the ones worth pitching.",
       "tools": [
         "apollo",
         "gmail"
-      ]
+      ],
+      "brief": "You are a desk in the BC AI engine (Business Clever LLC). Your work is done by the BC AI backend and shown here — report on it plainly, in the owner's language. Nothing you write goes to a prospect until the owner ticks it."
     },
     {
       "id": "piper",
       "department": "sales",
       "lead": false,
-      "name": "PROPOSALS",
-      "role": "Proposal Agent",
-      "does": "Turns a deal brief into a proposal + send-ready email in minutes.",
+      "name": "PITCH WRITER",
+      "role": "Audit & Pitch Agent",
+      "does": "Diagnoses the weakness (no website, social only, weak site) and writes the value-first WhatsApp pitch plus the one-pager it links to, in the prospect's language.",
       "tools": [
         "notion",
         "gmail"
-      ]
+      ],
+      "brief": "You are a desk in the BC AI engine (Business Clever LLC). Your work is done by the BC AI backend and shown here — report on it plainly, in the owner's language. Nothing you write goes to a prospect until the owner ticks it."
     },
     {
       "id": "folo",
       "department": "sales",
       "lead": false,
       "name": "FOLLOW UPS",
-      "role": "Second-Touch & Revival Agent",
-      "does": "Chases everything that went quiet — unanswered calls, post-demo silence, stalled deals.",
+      "role": "Revival Agent",
+      "does": "Chases everything that went quiet — unanswered pitches, opened one-pagers with no reply, stalled conversations.",
       "tools": [
         "gmail",
         "imessage"
-      ]
+      ],
+      "brief": "You are a desk in the BC AI engine (Business Clever LLC). Your work is done by the BC AI backend and shown here — report on it plainly, in the owner's language. Nothing you write goes to a prospect until the owner ticks it."
     },
     {
       "id": "mlead",

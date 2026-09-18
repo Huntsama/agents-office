@@ -6,6 +6,7 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { loadConfig, ROOT } from './config.mjs';
 
 const results = [];
@@ -450,7 +451,10 @@ else {
 /* ---------- 3. server smoke ---------- */
 {
   const port = 4600 + Math.floor(Math.random() * 300);
-  const env = { ...process.env, PORT: String(port) };
+  // a scratch office: the checks must not read or write the real task list, and must not
+  // start (or be confused by) the BC AI engine — AO_BC=0 keeps the sales pod quiet here
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ao-check-'));
+  const env = { ...process.env, PORT: String(port), AO_DATA: dataDir, AO_BC: '0' };
   const srv = spawn('node', ['serve.mjs'], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
   let log = ''; srv.stdout.on('data', d => { log += d; }); srv.stderr.on('data', d => { log += d; });
   const base = `http://localhost:${port}`;

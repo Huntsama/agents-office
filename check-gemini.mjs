@@ -3,6 +3,12 @@
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+// its own data dir: a check must never write into the real office's task list
+const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'ao-check-'));
 
 const REPLY = 'PONG from the fake Gemini';
 let seen = null;
@@ -19,7 +25,7 @@ const fakeUrl = `http://127.0.0.1:${fake.address().port}/chat/completions`;
 
 const port = 4599;
 const srv = spawn(process.execPath, ['serve.mjs'], {
-  env: { ...process.env, PORT: String(port), GEMINI_API_KEY: 'test-key', AO_GEMINI_URL: fakeUrl, AO_BRAIN: './brain' },
+  env: { ...process.env, AO_DATA: DATA_DIR, PORT: String(port), GEMINI_API_KEY: 'test-key', AO_GEMINI_URL: fakeUrl, AO_BRAIN: './brain' },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 srv.stderr.on('data', d => process.stderr.write(d));
@@ -47,4 +53,4 @@ try {
   assert.equal(u.window.tokens - before, 18, 'gemini token counts land in the office window');
 
   console.log('✓ gemini backend: health · chat · auth header · model id · usage —', REPLY);
-} finally { srv.kill('SIGKILL'); fake.close(); }
+} finally { srv.kill('SIGKILL'); fs.rmSync(DATA_DIR, { recursive: true, force: true }); fake.close(); }

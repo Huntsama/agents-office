@@ -20,6 +20,12 @@ export function loadConfig() {
   c.mcp = { allow: [], deny: [], departments: {}, ...(base.mcp || {}), ...(local.mcp || {}) };
   c.tools = { web: true, browser: true, ...(base.tools || {}), ...(local.tools || {}) }; // V3.2 (16 Sep): browser = Claude in Chrome
   c.teams = { enabled: true, max: 4, ...(base.teams || {}), ...(local.teams || {}) }; // V3.2 (16 Sep): Agent Teams
+  // BC AI: the sales pod tracks the BC AI engine. `start` = bring it up with the office. Sends are
+  // held for the owner's tick whatever this says — see bc.mjs.
+  c.bc = { enabled: false, url: 'http://127.0.0.1:3000', dir: '', start: true, ...(base.bc || {}), ...(local.bc || {}) };
+  if (process.env.AO_BC_URL) { c.bc.url = process.env.AO_BC_URL; c.bc.enabled = true; }
+  if (process.env.AO_BC_DIR) { c.bc.dir = process.env.AO_BC_DIR; c.bc.enabled = true; }
+  if (process.env.AO_BC === '0') c.bc.enabled = false;
   if (process.env.AO_NAME) c.name = process.env.AO_NAME;
   if (process.env.AO_BRAIN) c.brain = process.env.AO_BRAIN;
   if (process.env.PORT) c.port = +process.env.PORT;

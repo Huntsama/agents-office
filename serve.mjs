@@ -50,12 +50,13 @@ import * as onboard from './onboard.mjs';
 import * as routines from './routines.mjs';
 import * as usage from './usage.mjs';
 import * as teams from './teams.mjs';
+import * as bcBridge from './bc.mjs';
 import { normModel, modelFor, modelArgs, modelId, geminiId, modelName, MODEL_KEYS, DEFAULT_MODEL, normEffort, effortFor, effortName, EFFORT_KEYS } from './src/models.js';
 import { parseWhen, describe, valid as validWhen, untilText } from './src/when.js';
 
 const cfg = loadConfig();
 const HTML = path.join(ROOT, 'dist', 'command-centre-v2.html'); // built by build.mjs; shipped so npm start works without a build
-const DATA = path.join(ROOT, 'data');
+const DATA = process.env.AO_DATA ? path.resolve(process.env.AO_DATA) : path.join(ROOT, 'data'); // AO_DATA: a scratch office for the checks, so they never touch the real task list
 const FILE = path.join(DATA, 'tasks.json');
 const BRAIN = cfg.brainPath;
 const NOTES_DIR = path.join(BRAIN, 'Agents Office');
@@ -100,6 +101,10 @@ else if (process.env.ANTHROPIC_API_KEY) {
 const load = () => { try { return JSON.parse(fs.readFileSync(FILE, 'utf8')); } catch { return []; } };
 const save = list => { fs.mkdirSync(DATA, { recursive: true }); fs.writeFileSync(FILE, JSON.stringify(list, null, 2)); };
 const nid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+/* ---------- BC AI: the sales pod tracks the engine (bc.mjs) ---------- */
+const BC = cfg.bc || { enabled: false };
+const bc = BC.enabled ? bcBridge.create({ url: BC.url, load, save, log: m => console.log(m) }) : null;
+
 /* ---------- the usage gauge (V3.6, A3): Claude's own numbers, the office's count underneath ---------- */
 const USTATE = usage.loadState(DATA);
 let usageCache = { at: 0, value: null, stale: true };
@@ -482,7 +487,7 @@ const server = http.createServer(async (req, res) => {
       return res.end(url.pathname === '/dark' ? page.replace('<body>', '<body class="dark">') : page); // /dark: the same file, opened in dark mode
     }
     if (url.pathname === '/api/health') return json(res, 200, { ok: true, version, backend, model: cfg.model, modelName: modelName(cfg.model), models: MODEL_KEYS, effort: cfg.effort || '', efforts: EFFORT_KEYS, name: cfg.name, brain: BRAIN, notes: graph.notes, depts: DEPT_KEYS,
-      agents: agentsOut(), setup: setupMap(), routines: (l => ({ count: l.length, paused: l.filter(r => r.paused).length, depts: routines.ALLOWED }))(loadRoutines()), roster: { customised: roster.customised, briefed: roster.briefed, files: roster.files, problems: roster.problems }, skills: (({ count, shipped, brain, problems }) => ({ count, shipped, brain, problems }))(skills.summary()), tools: backend === 'claude-cli', mcp: mcp.summary(), teams: TEAMS, browser: mcp.summary().browser });
+      agents: agentsOut(), setup: setupMap(), routines: (l => ({ count: l.length, paused: l.filter(r => r.paused).length, depts: routines.ALLOWED }))(loadRoutines()), roster: { customised: roster.customised, briefed: roster.briefed, files: roster.files, problems: roster.problems }, skills: (({ count, shipped, brain, problems }) => ({ count, shipped, brain, problems }))(skills.summary()), tools: backend === 'claude-cli', mcp: mcp.summary(), teams: TEAMS, browser: mcp.summary().browser, bc: bc ? { enabled: true, url: BC.url, ...bc.state() } : { enabled: false } });
     if (url.pathname === '/api/agents') return json(res, 200, { agents: agentsOut(), problems: roster.problems, files: roster.files });
     if (url.pathname === '/api/skills') return json(res, 200, refreshSkills().summary()); // reloads from disk: edit a skill, hit this, see it
     if (url.pathname === '/api/lessons') return json(res, 200, { dir: learn.dir(BRAIN), agents: AGENTS.map(a => ({ id: a.id, name: a.name, ...learn.read(BRAIN, a.id) })).filter(x => x.rules.length || x.oneOffs.length) });
@@ -521,6 +526,20 @@ const server = http.createServer(async (req, res) => {
       const dueAt = at ? (typeof at === 'number' ? at : Date.parse(at)) : null; // V3.2.1: a task for a date
       if (at && !(dueAt > 0)) return json(res, 400, { error: 'at must be a time (ms or ISO)' });
       if (dueAt && dueAt < Date.now() - 60000) return json(res, 400, { error: 'that time has passed — pick one that is still ahead' });
+      // "BC <order>" in the bar (the same idiom as TEAM): the order goes to the BC AI engine, not to
+      // a model. The desks then show the run as it happens; any pitch it writes waits for your tick.
+      const bcOrder = /^\s*bc[:,\s]\s*(.+)$/is.exec(String(text));
+      if (bcOrder && bc) {
+        const order = bcOrder[1].trim();
+        const task = { id: nid(), dept: bcBridge.DEPT, agent: bcBridge.LEAD_DESK, bc: 'order', title: order.slice(0, 80),
+          text: order, why: 'BC AI engine', plan: [], eta: 0, state: 'doing', addedAt: Date.now(), startedAt: Date.now(), by: 'you', result: '' };
+        const l = load(); l.push(task); save(l);
+        console.log(`▶ BC AI order: ${order.slice(0, 120)}`);
+        bc.order(order).then(async () => { await bc.tick(); const l2 = load(); const t = l2.find(x => x.id === task.id); if (t) { t.state = 'done'; t.doneAt = Date.now(); t.result = (t.result || '') + '\nPipeline finished — see the desks.'; save(l2); } })
+          .catch(async e => { const l2 = load(); const t = l2.find(x => x.id === task.id); if (t) { Object.assign(t, { state: 'done', doneAt: Date.now(), error: true, result: 'BC AI could not run this: ' + e.message }); save(l2); } });
+        return json(res, 200, task);
+      }
+      if (bcOrder && !bc) return json(res, 400, { error: 'BC AI is off — set bc.enabled in office.config.json' });
       const r = await route(dept, String(text).trim());
       const asTeam = TEAMS.enabled && (team === true || teams.intent(text)); // V3.2 (16 Sep): TEAM in the bar, or "as a team" in the sentence → the lead owns it and splits it
       const task = { id: nid(), dept, agent: asTeam ? leadOf(dept).id : r.agent, title: r.title, text: String(text).trim(), plan: r.plan, eta: r.eta, why: asTeam ? `team — ${leadOf(dept).name} splits it across the desks` : r.why, state: 'next', addedAt: Date.now(), by: 'you', model: normModel(model) || undefined, effort: normEffort(effort) || undefined, // model/effort: set on this task (beats routine, agent, office)
@@ -537,6 +556,24 @@ const server = http.createServer(async (req, res) => {
       if (task.state !== 'waiting') return json(res, 400, { error: 'this task is not waiting for your OK' });
       const { feedback } = m[2] === 'reject' ? await body(req) : {};
       const note = String(feedback || '').trim();
+      if (task.bc === 'pitch') { // a held BC AI pitch: the tick sends it, nothing else runs
+        const list = load(); const t = list.find(x => x.id === task.id);
+        if (m[2] === 'reject') {
+          Object.assign(t, { state: 'done', doneAt: Date.now(), error: false, result: t.result + `\n\n— not sent. ${note || 'Sent back by the owner.'}` });
+          save(list); console.log(`↩ ${task.id} pitch not sent: ${note.slice(0, 80)}`);
+          return json(res, 200, { ok: true, id: task.id, state: 'done', sent: false });
+        }
+        try {
+          await bc.send(task.lead);
+          Object.assign(t, { state: 'done', doneAt: Date.now(), error: false, result: t.result + '\n\n— sent on WhatsApp ' + new Date().toLocaleString() });
+          save(list); console.log(`✅ ${task.id} pitch sent to lead ${task.lead}`);
+          await bc.tick();
+          return json(res, 200, { ok: true, id: task.id, state: 'done', sent: true });
+        } catch (e) {
+          Object.assign(t, { state: 'waiting', result: t.result + '\n\n— could not send: ' + e.message }); save(list);
+          return json(res, 502, { error: e.message });
+        }
+      }
       console.log(`${m[2] === 'approve' ? '✅' : '↩'} ${task.id} ${m[2] === 'approve' ? 'approved — ' + agentName(task.agent) + ' is sending' : 'sent back: ' + note.slice(0, 80)}`);
       enqueue(() => runServerTask(task.id, m[2] === 'approve' ? { approve: true } : { feedback: note || 'Not this. Rework it.' }))
         .then(t => { if (m[2] === 'reject' && note && t && !t.error) { const a = AGENTS.find(x => x.id === t.agent); return learn.classify(ask, a, t, note).then(v => { const r = learn.record(BRAIN, a, t, note, v); console.log(`  ↳ ${a.name} ${r.standing ? 'learned a rule' : 'noted a one-off'}: ${r.line.slice(0, 100)}`); }); } })
@@ -584,9 +621,44 @@ const server = http.createServer(async (req, res) => {
       const r = await chat(agent, String(text).trim(), history);
       return json(res, 200, { ...r, interview: false });
     }
+    if (url.pathname === '/api/bc') { // what the engine is doing right now (never a 500: off is an answer)
+      if (!bc) return json(res, 200, { enabled: false, reason: 'bc.enabled is false in office.config.json' });
+      if (url.searchParams.get('refresh') === '1') await bc.tick();
+      return json(res, 200, { enabled: true, url: BC.url, desks: bcBridge.DESK_OF, ...bc.state() });
+    }
+    if (url.pathname === '/api/bc/order' && req.method === 'POST') { // an order typed in the office → BC AI's pipeline
+      if (!bc) return json(res, 400, { error: 'BC AI is off — set bc.enabled in office.config.json' });
+      const { order, filters } = await body(req);
+      if (!order || !String(order).trim()) return json(res, 400, { error: 'empty order' });
+      console.log(`▶ BC AI order: ${String(order).trim().slice(0, 120)}`);
+      try { const r = await bc.order(String(order).trim(), filters); await bc.tick(); return json(res, 200, { ok: true, ...r }); }
+      catch (e) { return json(res, 502, { error: e.message }); }
+    }
     json(res, 404, { error: 'not found' });
   } catch (e) { console.error(e); json(res, 500, { error: e.message }); }
 });
+// One command: if BC AI is not already answering on its port, start it from bc.dir and wait for it.
+// Already running (its own `npm start`, or a second office) → the office just attaches. ponytail:
+// a child process, not a supervisor — if it dies the office says so on /api/bc and you restart it.
+async function startBC() {
+  const up = async () => { try { return (await fetch(BC.url + '/api/stats', { signal: AbortSignal.timeout(1500) })).ok; } catch { return false; } };
+  if (await up()) { console.log(`  BC AI: already running on ${BC.url} — attaching`); return bc.start(); }
+  const dir = BC.dir && path.resolve(ROOT, BC.dir);
+  if (!BC.start || !dir || !fs.existsSync(path.join(dir, 'server.js'))) {
+    console.log(`  BC AI: not running at ${BC.url}${dir ? ' and no server.js in ' + dir : ' (set bc.dir to start it here)'} — the sales pod stays idle`);
+    return bc.start(); // keeps polling: it attaches by itself the moment BC AI comes up
+  }
+  const child = spawn(process.execPath, ['server.js'], { cwd: dir, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+  child.stdout.on('data', d => process.stdout.write('  [bc] ' + d));
+  child.stderr.on('data', d => process.stderr.write('  [bc] ' + d));
+  child.on('exit', c => console.warn(`  BC AI exited (${c}) — the sales pod will attach again when it is back`));
+  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { child.kill(); process.exit(0); });
+  console.log(`  BC AI: starting from ${dir} …`);
+  for (let i = 0; i < 60 && !(await up()); i++) await new Promise(r => setTimeout(r, 500));
+  console.log(await up() ? `  BC AI: up on ${BC.url} — the sales pod is tracking it` : `  BC AI: did not answer on ${BC.url} in 30 s — check its log above`);
+  bc.start();
+}
+
 server.listen(cfg.port, () => {
   console.log(`Agents Office ${version} → http://localhost:${cfg.port}`);
   console.log(`  business: ${cfg.name}   brain: ${BRAIN} (${graph.notes} notes, ${graph.links.length} links)   claude: ${backend} · ${modelName(cfg.model)}${cfg.effort ? ' · effort ' + cfg.effort : ''} by default (routing on Sonnet)`);
@@ -599,5 +671,6 @@ server.listen(cfg.port, () => {
   console.log(`  teams: ${TEAMS.enabled ? 'on — TEAM in the bar or "as a team" in the sentence; the lead splits it across up to ' + TEAMS.max + ' desks' : 'off (teams.enabled in office.config.json)'}`);
   const sk = skills.summary(); const setup = setupMap(); const notYet = DEPT_KEYS.filter(k => !setup[k]);
   console.log(`  skills: ${sk.count} (${sk.shipped} shipped in skills/, ${sk.brain} in ${path.join(NOTES_DIR, 'skills')})${sk.problems.length ? '   ⚠ ' + sk.problems.length + ' problem' + (sk.problems.length > 1 ? 's' : '') + ' — see npm run check' : ''}`);
+  if (bc) startBC();
   console.log(`  set up: ${notYet.length === DEPT_KEYS.length ? 'no department yet — open a lead\'s chat and say "set up"' : notYet.length ? DEPT_KEYS.length - notYet.length + ' of 6 departments (not yet: ' + notYet.map(k => DEPTS[k].name).join(', ') + ')' : 'all six departments'}   lessons: ${learn.dir(BRAIN)}`);
 });

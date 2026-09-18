@@ -7,9 +7,9 @@
 // names them; AUTO (empty) = the model's own default (Opus runs at high). Same four places, same
 // precedence as the model, then the model's own.
 export const MODELS = {
-  sonnet: { key: 'sonnet', name: 'Sonnet', flag: 'sonnet', id: 'claude-sonnet-5' },
-  opus:   { key: 'opus',   name: 'Opus',   flag: 'opus',   id: 'claude-opus-5', effort: 'high' },
-  fable:  { key: 'fable',  name: 'Fable',  flag: 'fable',  id: 'claude-fable-5-1' },
+  sonnet: { key: 'sonnet', name: 'Sonnet', flag: 'sonnet', id: 'claude-sonnet-5', gid: 'gemini-3.6-flash' },
+  opus:   { key: 'opus',   name: 'Opus',   flag: 'opus',   id: 'claude-opus-5', effort: 'high', gid: 'gemini-3.1-pro-preview' },
+  fable:  { key: 'fable',  name: 'Fable',  flag: 'fable',  id: 'claude-fable-5-1', gid: 'gemini-3.6-flash' },
 };
 export const MODEL_KEYS = ['sonnet', 'opus', 'fable'];
 export const DEFAULT_MODEL = 'sonnet';
@@ -46,6 +46,9 @@ export function normModel(s) {
 }
 export const modelName = k => (MODELS[k] || MODELS[DEFAULT_MODEL]).name;
 export const modelId = k => (MODELS[k] || MODELS[DEFAULT_MODEL]).id;
+// ponytail: the three office names map onto Gemini models; rename here (or set AO_GEMINI_MODEL) for others.
+// Opus -> gemini-3.1-pro-preview needs a paid key; a free key 429s on it, so leave the office on Sonnet.
+export const geminiId = k => process.env.AO_GEMINI_MODEL || (MODELS[k] || MODELS[DEFAULT_MODEL]).gid;
 
 /** The one that wins, and where it was set. Each argument is a model key or empty. */
 export function modelFor({ task, routine, agent, office } = {}) {
